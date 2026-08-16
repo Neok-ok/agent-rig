@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use agent_rig::{
     render_scene_file, run_increment1, run_increment2, run_increment3, run_increment4,
-    run_increment5, sim_scene_file, step_scene_file, DEFAULT_DT, DEFAULT_STEPS, FRAME_HEIGHT,
-    FRAME_WIDTH, INCREMENT2_STEPS, INCREMENT3_FRAMES, INCREMENT3_STRIDE, INCREMENT4_STEPS,
-    INCREMENT5_STEPS,
+    run_increment5, run_increment6, sim_scene_file, step_scene_file, DEFAULT_DT, DEFAULT_STEPS,
+    FRAME_HEIGHT, FRAME_WIDTH, INCREMENT2_STEPS, INCREMENT3_FRAMES, INCREMENT3_STRIDE,
+    INCREMENT4_STEPS, INCREMENT5_STEPS, INCREMENT6_STEPS,
 };
 use clap::{Parser, Subcommand};
 
@@ -94,6 +94,17 @@ enum Command {
         #[arg(long, default_value_t = FRAME_HEIGHT)]
         height: u32,
     },
+    /// Increment 6: two distinct meshes + primitives, step physics, render post-step PNG.
+    Increment6 {
+        #[arg(long, default_value = "artifacts/increment6")]
+        out: PathBuf,
+        #[arg(long, default_value_t = INCREMENT6_STEPS)]
+        steps: u32,
+        #[arg(long, default_value_t = FRAME_WIDTH)]
+        width: u32,
+        #[arg(long, default_value_t = FRAME_HEIGHT)]
+        height: u32,
+    },
     /// Increment 3: write ramp scene, simulate over time, render frame PNGs.
     Increment3 {
         #[arg(long, default_value = "artifacts/increment3")]
@@ -166,6 +177,12 @@ fn main() {
             width,
             height,
         }) => run_increment5(&out, steps, DEFAULT_DT, width, height).map(Some),
+        Some(Command::Increment6 {
+            out,
+            steps,
+            width,
+            height,
+        }) => run_increment6(&out, steps, DEFAULT_DT, width, height).map(Some),
         Some(Command::Increment3 {
             out,
             frames,
@@ -196,7 +213,7 @@ fn main() {
             run_increment1(&args.out, args.steps, DEFAULT_DT, args.width, args.height).map(Some)
         }
         None => {
-            eprintln!("usage: agent-rig <demo|increment2|increment3|increment4|increment5|sim|step|render> …  (or --demo for increment 1)");
+            eprintln!("usage: agent-rig <demo|increment2|increment3|increment4|increment5|increment6|sim|step|render> …  (or --demo for increment 1)");
             std::process::exit(2);
         }
     };

@@ -1,4 +1,4 @@
-# agent-rig (increments 1–5)
+# agent-rig (increments 1–6)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes, with optional albedo textures). No GPU. No Three.js in the engine.
 
@@ -171,6 +171,42 @@ cd /workspace/agent-rig && ./scripts/increment5-threejs.sh
 
 Writes `artifacts/increment5/threejs-frame.png` (stock MeshStandardMaterial + `map` from `albedo_map`, ambient 0.25 + directional, shadows on, no env map, no tonemap, 800x450).
 
+
+## Increment 6
+
+Two distinct triangle meshes on a plane: the existing textured rock (`meshes/rock.obj`) plus a wooden wedge / doorstop (`meshes/wedge.obj`). A metal ball rolls into the rock; a rough crate sits nearby. Same light as increment 5. Each mesh has a queryable collider (`convex_hull` on the rock, `trimesh` on the wedge); the physics dump records `collider` for both.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment6.sh
+```
+
+Writes:
+
+- `artifacts/increment6/scene.json` — authored scene (two meshes + primitives)
+- `artifacts/increment6/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment6/frame.png` — our renderer, 800x450, post-step poses
+- `artifacts/increment6/threejs-frame.png` — stock Three.js, same poses
+
+### CLI
+
+```bash
+agent-rig increment6 --out artifacts/increment6
+agent-rig sim artifacts/increment6/scene.json --out artifacts/increment6-sim
+agent-rig render artifacts/increment6/scene.json --physics artifacts/increment6/physics.json --out artifacts/increment6/frame.png
+```
+
+`sim` / `render` load both OBJ paths from the scene.
+
+### Three.js baseline (same post-step poses)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment6-threejs.sh
+```
+
+Writes `artifacts/increment6/threejs-frame.png` (stock MeshStandardMaterial, ambient 0.25 + directional, shadows on, no env map, no tonemap, 800x450). Loads both OBJ files from the increment-6 scene JSON and applies `physics.json` poses.
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
@@ -197,3 +233,5 @@ Increment 3: scene has a ramp (rotated static box); `sim` writes ≥8 frame PNGs
 Increment 4: an OBJ triangle mesh loads (vertex/triangle counts > 0, not a box/sphere); after stepping there is a contact involving the mesh body; `increment4` writes scene + physics dump + our PNG.
 
 Increment 5: a non-solid albedo PNG loads; the increment-5 mesh material points `albedo_map` at it; `increment5` writes scene + physics dump + our PNG and the rendered mesh is not a single albedo.
+
+Increment 6: two distinct mesh files load (different paths / vertex counts); the scene has two mesh bodies; after stepping there is a contact involving a mesh and the dump records collider type for both; `increment6` writes scene + physics dump + our PNG.

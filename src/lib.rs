@@ -1,4 +1,4 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–5).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–6).
 
 mod mesh;
 mod physics;
@@ -11,7 +11,8 @@ pub use mesh::{load_obj, parse_obj, TriangleMesh};
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
     increment3_scene_json, increment4_scene, increment4_scene_json, increment5_scene,
-    increment5_scene_json, parse_scene, Body, Camera, Light, Material, MeshCollider, Scene, Shape,
+    increment5_scene_json, increment6_scene, increment6_scene_json, parse_scene, Body, Camera,
+    Light, Material, MeshCollider, Scene, Shape,
 };
 
 use std::fs;
@@ -24,6 +25,7 @@ pub const INCREMENT3_FRAMES: u32 = 10;
 pub const INCREMENT3_STRIDE: u32 = 20;
 pub const INCREMENT4_STEPS: u32 = 100;
 pub const INCREMENT5_STEPS: u32 = 100;
+pub const INCREMENT6_STEPS: u32 = 100;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -50,6 +52,11 @@ pub fn run_increment4(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u
 /// Increment 5: textured mesh + primitives, step, render post-step PNG.
 pub fn run_increment5(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
     write_step_render(out_dir, &increment5_scene(), steps, dt, width, height)
+}
+
+/// Increment 6: two distinct meshes + primitives, step, render post-step PNG.
+pub fn run_increment6(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
+    write_step_render(out_dir, &increment6_scene(), steps, dt, width, height)
 }
 
 fn write_step_render(

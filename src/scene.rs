@@ -357,3 +357,59 @@ pub fn increment5_scene() -> Scene {
         .expect("increment5 scene JSON is valid")
         .with_default_mesh_search()
 }
+
+pub const INCREMENT6_SCENE_JSON: &str = r#"{
+  "camera": { "position": [3.5, 2.15, 5.1], "look_at": [0.15, 0.42, 0.0], "fov_y_deg": 40 },
+  "lights": [{ "type": "directional", "direction": [-0.45, -1.0, -0.35], "color": [1.0, 0.97, 0.92], "intensity": 3.0 }],
+  "bodies": [
+    {
+      "id": "ground",
+      "shape": { "type": "box", "size": [10, 0.2, 10] },
+      "position": [0, -0.1, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "material": { "albedo": [0.35, 0.36, 0.38], "roughness": 0.8, "metallic": 0.0 }
+    },
+    {
+      "id": "rock",
+      "shape": { "type": "mesh", "path": "meshes/rock.obj", "collider": "convex_hull" },
+      "position": [0.45, 0.002, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 12.0,
+      "material": { "albedo": [0.48, 0.52, 0.62], "roughness": 0.28, "metallic": 0.2, "albedo_map": "textures/rock.png" }
+    },
+    {
+      "id": "wedge",
+      "shape": { "type": "mesh", "path": "meshes/wedge.obj", "collider": "trimesh" },
+      "position": [1.72, 0.0, 0.38],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "material": { "albedo": [0.62, 0.38, 0.18], "roughness": 0.78, "metallic": 0.0 }
+    },
+    {
+      "id": "ball",
+      "shape": { "type": "sphere", "radius": 0.32 },
+      "position": [-1.35, 0.85, 0.04],
+      "mass": 1.0,
+      "linear_velocity": [3.4, 0.15, 0],
+      "material": { "albedo": [0.92, 0.78, 0.45], "roughness": 0.15, "metallic": 0.9 }
+    },
+    {
+      "id": "crate",
+      "shape": { "type": "box", "size": [0.44, 0.44, 0.44] },
+      "position": [1.55, 0.22, -0.70],
+      "mass": 0.6,
+      "material": { "albedo": [0.22, 0.38, 0.28], "roughness": 0.85, "metallic": 0.0 }
+    }
+  ]
+}"#;
+
+pub fn increment6_scene_json() -> &'static str {
+    INCREMENT6_SCENE_JSON
+}
+
+pub fn increment6_scene() -> Scene {
+    parse_scene(INCREMENT6_SCENE_JSON)
+        .expect("increment6 scene JSON is valid")
+        .with_default_mesh_search()
+}
