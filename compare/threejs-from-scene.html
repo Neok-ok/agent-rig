@@ -59,7 +59,17 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xc5cad0);
 
 const camera = new THREE.PerspectiveCamera(spec.camera.fov_y_deg, WIDTH / HEIGHT, 0.1, 100);
-camera.position.fromArray(spec.camera.position);
+const camParam = params.get('cam');
+if (camParam) {
+  const xyz = camParam.split(',').map(Number);
+  if (xyz.length === 3 && xyz.every((n) => Number.isFinite(n))) {
+    camera.position.set(xyz[0], xyz[1], xyz[2]);
+  } else {
+    camera.position.fromArray(spec.camera.position);
+  }
+} else {
+  camera.position.fromArray(spec.camera.position);
+}
 camera.lookAt(...spec.camera.look_at);
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.25));

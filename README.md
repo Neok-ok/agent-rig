@@ -1,4 +1,4 @@
-# agent-rig (increments 1–11)
+# agent-rig (increments 1–12)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness). Directional and point lights both cast shadow rays. No GPU. No Three.js in the engine.
 
@@ -386,6 +386,38 @@ cd /workspace/agent-rig && ./scripts/increment11-threejs.sh
 
 Writes `artifacts/increment11/threejs-frame.png` (stock MeshStandardMaterial, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450).
 
+
+## Increment 12
+
+Same courtyard as increment 11 (bowl + rock + metal ball + copper pillar, directional + shadowed point light). Physics is stepped once (same step count as increment 11) so the dump still has the pillar collider and ground–pillar contacts. Then eight cameras orbit the existing look-at at the increment-11 radius and height (yaw 0°, 45°, …, 315° around Y). Frozen pose — not a new physics animation.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment12.sh
+```
+
+Writes:
+
+- `artifacts/increment12/scene.json` — authored increment-11 courtyard
+- `artifacts/increment12/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment12/frame_00.png` … `frame_07.png` — our renderer, 800x450, same pose, 8 orbit cameras
+- `artifacts/increment12/threejs_00.png` … `threejs_07.png` — stock Three.js, same 8 poses (no IBL/tonemap)
+
+### CLI
+
+```bash
+agent-rig increment12 --out artifacts/increment12
+```
+
+### Three.js baseline (same 8 poses)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment12-threejs.sh
+```
+
+Writes `artifacts/increment12/threejs_00.png` … `threejs_07.png` (stock MeshStandardMaterial, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450). Camera position is passed as a `cam` query param.
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
@@ -424,3 +456,5 @@ Increment 9: the glTF has `pbrMetallicRoughness.baseColorFactor` (and/or `baseCo
 Increment 10: the scene has a point light (`position`, `color`, `intensity`) plus the existing directional; `sim` / `render` load it; after stepping the glTF pillar still has a collider type and a contact in the dump; `increment10` writes scene + physics dump + our PNG (local highlight / falloff the directional alone would not make).
 
 Increment 11: the point light casts a shadow ray (occluded if something sits between the hit and the lamp); the courtyard and both lights stay; after stepping the glTF pillar still has a collider type and a contact in the dump; `increment11` writes scene + physics dump + our PNG (local umbra the unshadowed point light would not make).
+
+Increment 12: same courtyard and lights; physics is stepped once; eight orbit cameras write `frame_00.png`…`frame_07.png` that are not copies of one still; the dump still records the pillar collider and a contact involving it; `increment12` writes scene + physics dump + the 8 PNGs.
