@@ -153,6 +153,17 @@ impl AlbedoMap {
         let img = image::open(path)
             .map_err(|e| format!("load albedo {path:?}: {e}"))?
             .to_rgb8();
+        Self::from_rgb8(img)
+    }
+
+    fn load_from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let img = image::load_from_memory(bytes)
+            .map_err(|e| format!("load albedo bytes: {e}"))?
+            .to_rgb8();
+        Self::from_rgb8(img)
+    }
+
+    fn from_rgb8(img: image::RgbImage) -> Result<Self, String> {
         let width = img.width();
         let height = img.height();
         let mut pixels = Vec::with_capacity((width * height) as usize);
@@ -168,6 +179,12 @@ impl AlbedoMap {
             height,
             pixels,
         })
+    }
+
+    fn mul_factor(&mut self, factor: V3) {
+        for px in &mut self.pixels {
+            *px = px.hadamard(factor);
+        }
     }
 
     fn sample(&self, u: f32, v: f32) -> V3 {
@@ -234,6 +251,15 @@ struct EnvSh {
 pub fn render_scene(scene: &Scene, width: u32, height: u32) -> RgbImage {
     let mut prims: Vec<Prim> = Vec::with_capacity(scene.bodies.len());
     for b in &scene.bodies {
+        let mut albedo = V3::from_arr(b.material.albedo);
+        let mut roughness = b.material.roughness.clamp(0.04, 1.0);
+        let mut metallic = b.material.metallic.clamp(0.0, 1.0);
+        let mut albedo_map = b.material.albedo_map.as_ref().map(|p| {
+            let resolved = scene
+                .resolve_texture(p)
+                .unwrap_or_else(|e| panic!("albedo_map {p}: {e}"));
+            AlbedoMap::load(&resolved).unwrap_or_else(|e| panic!("{e}"))
+        });
         let kind = match &b.shape {
             Shape::Sphere { radius } => PrimKind::Sphere { radius: *radius },
             Shape::Box { size } => PrimKind::Box {
@@ -243,6 +269,23 @@ pub fn render_scene(scene: &Scene, width: u32, height: u32) -> RgbImage {
                 let mesh = scene
                     .load_body_mesh(path)
                     .unwrap_or_else(|e| panic!("load mesh {path}: {e}"));
+                if let Some(gm) = &mesh.gltf_material {
+                    albedo = V3::from_arr(gm.base_color_rgb());
+                    roughness = gm.roughness_factor.clamp(0.04, 1.0);
+                    metallic = gm.metallic_factor.clamp(0.0, 1.0);
+                    albedo_map = None;
+                    if let Some(bytes) = &gm.base_color_texture_bytes {
+                        let mut map = AlbedoMap::load_from_bytes(bytes)
+                            .unwrap_or_else(|e| panic!("gltf baseColorTexture: {e}"));
+                        map.mul_factor(albedo);
+                        albedo_map = Some(map);
+                    } else if let Some(tex_path) = &gm.base_color_texture_path {
+                        let mut map = AlbedoMap::load(tex_path)
+                            .unwrap_or_else(|e| panic!("gltf baseColorTexture {tex_path:?}: {e}"));
+                        map.mul_factor(albedo);
+                        albedo_map = Some(map);
+                    }
+                }
                 let rot = Quat::from_wxyz(b.rotation_wxyz);
                 let center = V3::from_arr(b.position);
                 let mut tris = Vec::with_capacity(mesh.indices.len());
@@ -282,19 +325,13 @@ pub fn render_scene(scene: &Scene, width: u32, height: u32) -> RgbImage {
                 }
             }
         };
-        let albedo_map = b.material.albedo_map.as_ref().map(|p| {
-            let resolved = scene
-                .resolve_texture(p)
-                .unwrap_or_else(|e| panic!("albedo_map {p}: {e}"));
-            AlbedoMap::load(&resolved).unwrap_or_else(|e| panic!("{e}"))
-        });
         prims.push(Prim {
             kind,
             center: V3::from_arr(b.position),
             rotation: Quat::from_wxyz(b.rotation_wxyz),
-            albedo: V3::from_arr(b.material.albedo),
-            roughness: b.material.roughness.clamp(0.04, 1.0),
-            metallic: b.material.metallic.clamp(0.0, 1.0),
+            albedo,
+            roughness,
+            metallic,
             albedo_map,
         });
     }

@@ -1,6 +1,6 @@
-# agent-rig (increments 1–8)
+# agent-rig (increments 1–9)
 
-Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures). No GPU. No Three.js in the engine.
+Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness). No GPU. No Three.js in the engine.
 
 ## Increment 1
 
@@ -279,6 +279,42 @@ cd /workspace/agent-rig && ./scripts/increment8-threejs.sh
 
 Writes `artifacts/increment8/threejs-frame.png` (stock MeshStandardMaterial, ambient 0.25 + directional, shadows on, no env map, no tonemap, 800x450). Loads the increment-8 scene JSON (bowl + rock OBJs and the glTF pillar) and applies `physics.json` poses.
 
+
+## Increment 9
+
+Same courtyard as increment 8. The hexagonal pillar's look comes from `pbrMetallicRoughness` in `meshes/pillar.gltf` (`baseColorFactor` copper `[0.85, 0.45, 0.18, 1]`, `metallicFactor` 0.85, `roughnessFactor` 0.25). Scene JSON on that body is a dull-gray fallback used only when the glTF primitive has no material.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment9.sh
+```
+
+Writes:
+
+- `artifacts/increment9/scene.json` — authored scene (bowl + rock + ball + glTF pillar, gray JSON fallback)
+- `artifacts/increment9/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment9/frame.png` — our renderer, 800x450, post-step poses (glTF copper + IBL)
+- `artifacts/increment9/threejs-frame.png` — stock Three.js, same poses (glTF factor on MeshStandardMaterial, no IBL/tonemap)
+
+### CLI
+
+```bash
+agent-rig increment9 --out artifacts/increment9
+agent-rig sim artifacts/increment9/scene.json --out artifacts/increment9-sim
+agent-rig render artifacts/increment9/scene.json --physics artifacts/increment9/physics.json --out artifacts/increment9/frame.png
+```
+
+`sim` / `render` load glTF materials via the shared loader.
+
+### Three.js baseline (same post-step poses)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment9-threejs.sh
+```
+
+Writes `artifacts/increment9/threejs-frame.png` (stock MeshStandardMaterial using the glTF `baseColorFactor` / map, ambient 0.25 + directional, shadows on, no env map, no tonemap, 800x450).
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
@@ -286,7 +322,7 @@ JSON object with `camera`, `lights`, and `bodies`.
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`
 - `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path)
-- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only.
+- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors), that drives the look; scene JSON `material` is the fallback when the glTF has no material.
 
 Gravity is `[0, -9.81, 0]`.
 
@@ -311,3 +347,5 @@ Increment 6: two distinct mesh files load (different paths / vertex counts); the
 Increment 7: the environment / ground body is a triangle mesh (not a box); after stepping there is a contact against that mesh and the dump records `trimesh`; `increment7` writes scene + physics dump + our PNG.
 
 Increment 8: a glTF/GLB file loads (vertex/triangle counts > 0); the scene has a mesh body whose path ends in `.gltf` or `.glb`; after stepping there is a contact involving that body and the dump records its collider type; `increment8` writes scene + physics dump + our PNG.
+
+Increment 9: the glTF has `pbrMetallicRoughness.baseColorFactor` (and/or `baseColorTexture`); the loaded mesh uses that factor, not only the scene-JSON albedo (JSON is a dull-gray fallback); after stepping there is a contact involving the glTF body and the dump records its collider type; `increment9` writes scene + physics dump + our PNG.

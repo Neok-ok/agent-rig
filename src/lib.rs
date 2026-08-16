@@ -1,4 +1,4 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–8).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–9).
 
 mod mesh;
 mod physics;
@@ -7,11 +7,11 @@ mod scene;
 
 pub use physics::{simulate_trajectory, step_physics, PhysicsBodyState, PhysicsContact, PhysicsDump, Trajectory, TrajectoryFrame};
 pub use render::{render_scene, render_scene_to_png, FRAME_HEIGHT, FRAME_WIDTH};
-pub use mesh::{load_gltf, load_mesh, load_obj, parse_obj, TriangleMesh};
+pub use mesh::{load_gltf, load_mesh, load_obj, parse_obj, GltfPbrMaterial, TriangleMesh};
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
     increment3_scene_json, increment4_scene, increment4_scene_json, increment5_scene,
-    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, parse_scene, Body, Camera,
+    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, parse_scene, Body, Camera,
     Light, Material, MeshCollider, Scene, Shape,
 };
 
@@ -28,6 +28,7 @@ pub const INCREMENT5_STEPS: u32 = 100;
 pub const INCREMENT6_STEPS: u32 = 100;
 pub const INCREMENT7_STEPS: u32 = 100;
 pub const INCREMENT8_STEPS: u32 = 100;
+pub const INCREMENT9_STEPS: u32 = 100;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -69,6 +70,11 @@ pub fn run_increment7(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u
 /// Increment 8: increment-7 courtyard plus a glTF pillar, step, render post-step PNG.
 pub fn run_increment8(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
     write_step_render(out_dir, &increment8_scene(), steps, dt, width, height)
+}
+
+/// Increment 9: same courtyard; pillar look from glTF pbrMetallicRoughness.
+pub fn run_increment9(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
+    write_step_render(out_dir, &increment9_scene(), steps, dt, width, height)
 }
 
 fn write_step_render(

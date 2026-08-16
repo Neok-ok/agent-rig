@@ -152,14 +152,40 @@ async function geomFromGLTF(url) {
       off += chunkLen;
     }
     if (!json) throw new Error('glb missing JSON');
-    return geomFromGltfJson(json, bin);
+    return geomFromGltfJson(json, bin, url);
   }
   const gltf = await (await fetch(url)).json();
   const bin = await loadGltfBuffer(url, gltf.buffers[0]);
-  return geomFromGltfJson(gltf, bin);
+  return geomFromGltfJson(gltf, bin, url);
 }
 
-function geomFromGltfJson(gltf, bin) {
+function pbrFromGltf(gltf, prim, gltfUrl) {
+  if (prim.material === undefined || !gltf.materials) return null;
+  const mat = gltf.materials[prim.material];
+  if (!mat) return null;
+  const pbr = mat.pbrMetallicRoughness || {};
+  const factor = pbr.baseColorFactor || [1, 1, 1, 1];
+  let textureUrl = null;
+  if (pbr.baseColorTexture && gltf.textures && gltf.images) {
+    const tex = gltf.textures[pbr.baseColorTexture.index];
+    if (tex && tex.source !== undefined) {
+      const img = gltf.images[tex.source];
+      if (img && img.uri) {
+        textureUrl = img.uri.startsWith('data:')
+          ? img.uri
+          : new URL(img.uri, new URL(gltfUrl, location.href)).href;
+      }
+    }
+  }
+  return {
+    baseColorFactor: factor,
+    metallicFactor: pbr.metallicFactor === undefined ? 1 : pbr.metallicFactor,
+    roughnessFactor: pbr.roughnessFactor === undefined ? 1 : pbr.roughnessFactor,
+    textureUrl,
+  };
+}
+
+function geomFromGltfJson(gltf, bin, gltfUrl) {
   const prim = gltf.meshes[0].primitives[0];
   const mode = prim.mode === undefined ? 4 : prim.mode;
   if (mode !== 4) throw new Error('only TRIANGLES glTF is supported');
@@ -186,7 +212,7 @@ function geomFromGltfJson(gltf, bin) {
     geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvAttr, 2));
   }
   geom.computeVertexNormals();
-  return geom;
+  return { geom, pbr: pbrFromGltf(gltf, prim, gltfUrl || '') };
 }
 
 function geomFromOBJ(text) {
@@ -238,23 +264,8 @@ for (const body of spec.bodies) {
   const pose = poses[body.id];
   const position = pose ? pose.position : body.position;
   const rotation = pose && pose.rotation_wxyz ? pose.rotation_wxyz : (body.rotation_wxyz || [1, 0, 0, 0]);
-  const mat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(...body.material.albedo),
-    roughness: body.material.roughness,
-    metalness: body.material.metallic,
-  });
-  if (body.material.albedo_map) {
-    const rel = body.material.albedo_map;
-    const url = rel.startsWith('/') ? rel : '/' + rel;
-    const tex = await loadTexture(url);
-    if ('SRGBColorSpace' in THREE) tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    tex.needsUpdate = true;
-    mat.map = tex;
-    mat.needsUpdate = true;
-  }
   let geom;
+  let gltfPbr = null;
   if (body.shape.type === 'box') {
     geom = new THREE.BoxGeometry(...body.shape.size);
   } else if (body.shape.type === 'sphere') {
@@ -263,13 +274,35 @@ for (const body of spec.bodies) {
     const rel = body.shape.path || '';
     const url = rel.startsWith('/') ? rel : '/' + rel;
     if (/\.gltf$/i.test(rel) || /\.glb$/i.test(rel)) {
-      geom = await geomFromGLTF(url);
+      const loaded = await geomFromGLTF(url);
+      geom = loaded.geom;
+      gltfPbr = loaded.pbr;
     } else {
       const objText = await (await fetch(url)).text();
       geom = geomFromOBJ(objText);
     }
   } else {
     continue;
+  }
+  const albedo = gltfPbr ? gltfPbr.baseColorFactor : body.material.albedo;
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(albedo[0], albedo[1], albedo[2]),
+    roughness: gltfPbr ? gltfPbr.roughnessFactor : body.material.roughness,
+    metalness: gltfPbr ? gltfPbr.metallicFactor : body.material.metallic,
+  });
+  const mapUrl = (gltfPbr && gltfPbr.textureUrl)
+    ? gltfPbr.textureUrl
+    : (body.material.albedo_map
+      ? (body.material.albedo_map.startsWith('/') ? body.material.albedo_map : '/' + body.material.albedo_map)
+      : null);
+  if (mapUrl) {
+    const tex = await loadTexture(mapUrl);
+    if ('SRGBColorSpace' in THREE) tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.needsUpdate = true;
+    mat.map = tex;
+    mat.needsUpdate = true;
   }
   const mesh = new THREE.Mesh(geom, mat);
   mesh.position.fromArray(position);

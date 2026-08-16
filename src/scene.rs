@@ -104,6 +104,24 @@ impl Scene {
         self.mesh_search_dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
         self
     }
+
+    /// Material used for shading: glTF pbrMetallicRoughness when present, else scene JSON.
+    pub fn resolved_body_material(&self, body: &Body) -> Result<Material, String> {
+        if let Shape::Mesh { path, .. } = &body.shape {
+            let mesh = self.load_body_mesh(path)?;
+            if let Some(gm) = &mesh.gltf_material {
+                return Ok(Material {
+                    albedo: gm.base_color_rgb(),
+                    roughness: gm.roughness_factor,
+                    metallic: gm.metallic_factor,
+                    albedo_map: gm.base_color_texture_path.as_ref().map(|p| {
+                        p.to_string_lossy().into_owned()
+                    }),
+                });
+            }
+        }
+        Ok(body.material.clone())
+    }
 }
 
 pub fn load_scene_from_path(path: &Path) -> Result<Scene, String> {
@@ -499,5 +517,53 @@ pub fn increment8_scene_json() -> &'static str {
 pub fn increment8_scene() -> Scene {
     parse_scene(INCREMENT8_SCENE_JSON)
         .expect("increment8 scene JSON is valid")
+        .with_default_mesh_search()
+}
+
+pub const INCREMENT9_SCENE_JSON: &str = r#"{
+  "camera": { "position": [3.6, 2.35, 5.2], "look_at": [0.1, 0.38, 0.0], "fov_y_deg": 40 },
+  "lights": [{ "type": "directional", "direction": [-0.45, -1.0, -0.35], "color": [1.0, 0.97, 0.92], "intensity": 3.0 }],
+  "bodies": [
+    {
+      "id": "ground",
+      "shape": { "type": "mesh", "path": "meshes/bowl.obj", "collider": "trimesh" },
+      "position": [0, 0, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "material": { "albedo": [0.48, 0.44, 0.38], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "rock",
+      "shape": { "type": "mesh", "path": "meshes/rock.obj", "collider": "convex_hull" },
+      "position": [0.40, 0.002, 0.08],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 12.0,
+      "material": { "albedo": [0.48, 0.52, 0.62], "roughness": 0.28, "metallic": 0.2, "albedo_map": "textures/rock.png" }
+    },
+    {
+      "id": "ball",
+      "shape": { "type": "sphere", "radius": 0.32 },
+      "position": [-1.10, 0.36, 0.10],
+      "mass": 1.0,
+      "material": { "albedo": [0.92, 0.78, 0.45], "roughness": 0.15, "metallic": 0.9 }
+    },
+    {
+      "id": "pillar",
+      "shape": { "type": "mesh", "path": "meshes/pillar.gltf", "collider": "convex_hull" },
+      "position": [1.10, 0.002, 0.70],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 16.0,
+      "material": { "albedo": [0.40, 0.40, 0.42], "roughness": 0.85, "metallic": 0.0 }
+    }
+  ]
+}"#;
+
+pub fn increment9_scene_json() -> &'static str {
+    INCREMENT9_SCENE_JSON
+}
+
+pub fn increment9_scene() -> Scene {
+    parse_scene(INCREMENT9_SCENE_JSON)
+        .expect("increment9 scene JSON is valid")
         .with_default_mesh_search()
 }

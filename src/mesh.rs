@@ -2,12 +2,40 @@
 
 use std::path::{Path, PathBuf};
 
+/// pbrMetallicRoughness resolved from a glTF primitive material (if any).
+#[derive(Debug, Clone)]
+pub struct GltfPbrMaterial {
+    pub base_color_factor: [f32; 4],
+    pub metallic_factor: f32,
+    pub roughness_factor: f32,
+    /// Sidecar image path (PNG/JPEG) next to the glTF, if the texture is a file URI.
+    pub base_color_texture_path: Option<PathBuf>,
+    /// Embedded image bytes (data URI or bufferView).
+    pub base_color_texture_bytes: Option<Vec<u8>>,
+}
+
+impl GltfPbrMaterial {
+    pub fn base_color_rgb(&self) -> [f32; 3] {
+        [
+            self.base_color_factor[0],
+            self.base_color_factor[1],
+            self.base_color_factor[2],
+        ]
+    }
+
+    pub fn has_base_color_texture(&self) -> bool {
+        self.base_color_texture_path.is_some() || self.base_color_texture_bytes.is_some()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TriangleMesh {
     pub vertices: Vec<[f32; 3]>,
     pub indices: Vec<[u32; 3]>,
     pub texcoords: Vec<[f32; 2]>,
     pub tex_indices: Vec<[u32; 3]>,
+    /// Present when the source glTF primitive referenced a material.
+    pub gltf_material: Option<GltfPbrMaterial>,
 }
 
 impl TriangleMesh {
@@ -235,6 +263,7 @@ pub fn parse_obj(txt: &str) -> Result<TriangleMesh, String> {
         indices,
         texcoords,
         tex_indices,
+        gltf_material: None,
     })
 }
 
@@ -373,12 +402,131 @@ fn parse_gltf_json(
     } else {
         (planar_xz(&vertices), indices.clone())
     };
+    let gltf_material = parse_primitive_material(&root, prim, base_dir, &buffers)?;
     Ok(TriangleMesh {
         vertices,
         indices,
         texcoords,
         tex_indices,
+        gltf_material,
     })
+}
+
+fn parse_primitive_material(
+    root: &serde_json::Value,
+    prim: &serde_json::Value,
+    base_dir: Option<&Path>,
+    buffers: &[Vec<u8>],
+) -> Result<Option<GltfPbrMaterial>, String> {
+    let Some(mi) = prim.get("material").and_then(|v| v.as_u64()) else {
+        return Ok(None);
+    };
+    let materials = root
+        .get("materials")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "gltf primitive has material but materials[] is missing".to_string())?;
+    let mat = materials
+        .get(mi as usize)
+        .ok_or_else(|| format!("missing gltf material {mi}"))?;
+    let pbr = mat.get("pbrMetallicRoughness");
+    let mut base_color_factor = [1.0f32, 1.0, 1.0, 1.0];
+    let mut metallic_factor = 1.0f32;
+    let mut roughness_factor = 1.0f32;
+    let mut base_color_texture_path = None;
+    let mut base_color_texture_bytes = None;
+    if let Some(pbr) = pbr {
+        if let Some(arr) = pbr.get("baseColorFactor").and_then(|v| v.as_array()) {
+            for (i, v) in arr.iter().take(4).enumerate() {
+                if let Some(n) = v.as_f64() {
+                    base_color_factor[i] = n as f32;
+                }
+            }
+        }
+        if let Some(n) = pbr.get("metallicFactor").and_then(|v| v.as_f64()) {
+            metallic_factor = n as f32;
+        }
+        if let Some(n) = pbr.get("roughnessFactor").and_then(|v| v.as_f64()) {
+            roughness_factor = n as f32;
+        }
+        if let Some(tex) = pbr.get("baseColorTexture") {
+            let tex_i = tex
+                .get("index")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| "baseColorTexture missing index".to_string())? as usize;
+            let (path, bytes) = load_gltf_image(root, tex_i, base_dir, buffers)?;
+            base_color_texture_path = path;
+            base_color_texture_bytes = bytes;
+        }
+    }
+    Ok(Some(GltfPbrMaterial {
+        base_color_factor,
+        metallic_factor,
+        roughness_factor,
+        base_color_texture_path,
+        base_color_texture_bytes,
+    }))
+}
+
+fn load_gltf_image(
+    root: &serde_json::Value,
+    texture_index: usize,
+    base_dir: Option<&Path>,
+    buffers: &[Vec<u8>],
+) -> Result<(Option<PathBuf>, Option<Vec<u8>>), String> {
+    let textures = root
+        .get("textures")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "gltf has baseColorTexture but no textures[]".to_string())?;
+    let tex = textures
+        .get(texture_index)
+        .ok_or_else(|| format!("missing texture {texture_index}"))?;
+    let source = tex
+        .get("source")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| format!("texture {texture_index} missing source"))? as usize;
+    let images = root
+        .get("images")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "gltf has texture but no images[]".to_string())?;
+    let img = images
+        .get(source)
+        .ok_or_else(|| format!("missing image {source}"))?;
+    if let Some(uri) = img.get("uri").and_then(|v| v.as_str()) {
+        if uri.starts_with("data:") {
+            return Ok((None, Some(decode_data_uri(uri)?)));
+        }
+        let p = match base_dir {
+            Some(dir) => dir.join(uri),
+            None => PathBuf::from(uri),
+        };
+        if !p.is_file() {
+            return Err(format!("gltf image not found: {p:?}"));
+        }
+        return Ok((Some(p), None));
+    }
+    if let Some(view_i) = img.get("bufferView").and_then(|v| v.as_u64()) {
+        let views = root
+            .get("bufferViews")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "gltf image bufferView but no bufferViews[]".to_string())?;
+        let view = views
+            .get(view_i as usize)
+            .ok_or_else(|| format!("missing bufferView {view_i}"))?;
+        let buf_i = view.get("buffer").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let buf = buffers
+            .get(buf_i)
+            .ok_or_else(|| format!("missing buffer {buf_i}"))?;
+        let off = view.get("byteOffset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let len = view
+            .get("byteLength")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| format!("bufferView {view_i} missing byteLength"))? as usize;
+        if off + len > buf.len() {
+            return Err(format!("image bufferView {view_i} out of range"));
+        }
+        return Ok((None, Some(buf[off..off + len].to_vec())));
+    }
+    Err("gltf image has neither uri nor bufferView".into())
 }
 
 fn load_gltf_buffer(
