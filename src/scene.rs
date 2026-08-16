@@ -1,0 +1,93 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Scene {
+    pub camera: Camera,
+    pub lights: Vec<Light>,
+    pub bodies: Vec<Body>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Camera {
+    pub position: [f32; 3],
+    pub look_at: [f32; 3],
+    pub fov_y_deg: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum Light {
+    #[serde(rename = "directional")]
+    Directional {
+        direction: [f32; 3],
+        color: [f32; 3],
+        intensity: f32,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Body {
+    pub id: String,
+    pub shape: Shape,
+    pub position: [f32; 3],
+    #[serde(default = "identity_wxyz")]
+    pub rotation_wxyz: [f32; 4],
+    pub mass: f32,
+    #[serde(default)]
+    pub linear_velocity: [f32; 3],
+    pub material: Material,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum Shape {
+    #[serde(rename = "box")]
+    Box { size: [f32; 3] },
+    #[serde(rename = "sphere")]
+    Sphere { radius: f32 },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Material {
+    pub albedo: [f32; 3],
+    pub roughness: f32,
+    pub metallic: f32,
+}
+
+fn identity_wxyz() -> [f32; 4] {
+    [1.0, 0.0, 0.0, 0.0]
+}
+
+pub const DEMO_SCENE_JSON: &str = r#"{
+  "camera": { "position": [4.2, 2.4, 5.2], "look_at": [0.0, 0.35, 0.0], "fov_y_deg": 40 },
+  "lights": [{ "type": "directional", "direction": [-0.45, -1.0, -0.35], "color": [1.0, 0.97, 0.92], "intensity": 3.0 }],
+  "bodies": [
+    {
+      "id": "ground",
+      "shape": { "type": "box", "size": [8, 0.2, 8] },
+      "position": [0, -0.1, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "material": { "albedo": [0.35, 0.36, 0.38], "roughness": 0.8, "metallic": 0.0 }
+    },
+    {
+      "id": "ball",
+      "shape": { "type": "sphere", "radius": 0.4 },
+      "position": [0, 2.2, 0],
+      "mass": 1.0,
+      "material": { "albedo": [0.85, 0.22, 0.16], "roughness": 0.35, "metallic": 0.05 }
+    }
+  ]
+}"#;
+
+pub fn demo_scene_json() -> &'static str {
+    DEMO_SCENE_JSON
+}
+
+pub fn parse_scene(json: &str) -> Result<Scene, String> {
+    serde_json::from_str(json).map_err(|e| format!("parse scene: {e}"))
+}
+
+pub fn demo_scene() -> Scene {
+    parse_scene(DEMO_SCENE_JSON).expect("demo scene JSON is valid")
+}

@@ -1,0 +1,75 @@
+{
+  "steps": 90,
+  "dt": 0.016666668,
+  "gravity": [
+    0.0,
+    -9.81,
+    0.0
+  ],
+  "bodies": [
+    {
+      "id": "ground",
+      "position": [
+        0.0,
+        -0.1,
+        0.0
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "ball",
+      "position": [
+        0.0,
+        0.3987237,
+        0.0
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "contacts": [
+    {
+      "body_a": "ground",
+      "body_b": "ball",
+      "point": [
+        0.0,
+        -0.00063816085,
+        0.0
+      ],
+      "normal": [
+        0.0,
+        1.0,
+        0.0
+      ]
+    }
+  ]
+}
