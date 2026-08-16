@@ -91,6 +91,104 @@ for (const light of spec.lights) {
   scene.add(sun.target);
 }
 
+function readAccessor(gltf, bin, accIndex) {
+  const acc = gltf.accessors[accIndex];
+  const view = gltf.bufferViews[acc.bufferView];
+  const offset = (view.byteOffset || 0) + (acc.byteOffset || 0);
+  const ctype = acc.componentType;
+  const comps = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[acc.type] || 1;
+  const elemSize = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 }[ctype];
+  const stride = view.byteStride || (elemSize * comps);
+  const out = [];
+  for (let i = 0; i < acc.count; i++) {
+    const o = offset + i * stride;
+    const row = [];
+    for (let c = 0; c < comps; c++) {
+      const p = o + c * elemSize;
+      if (ctype === 5126) row.push(new DataView(bin.buffer, bin.byteOffset + p, 4).getFloat32(0, true));
+      else if (ctype === 5125) row.push(new DataView(bin.buffer, bin.byteOffset + p, 4).getUint32(0, true));
+      else if (ctype === 5123) row.push(new DataView(bin.buffer, bin.byteOffset + p, 2).getUint16(0, true));
+      else if (ctype === 5121) row.push(bin[p]);
+      else throw new Error('unsupported componentType ' + ctype);
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+function decodeBase64(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function loadGltfBuffer(gltfUrl, buffer) {
+  if (!buffer.uri) throw new Error('gltf buffer missing uri');
+  if (buffer.uri.startsWith('data:')) {
+    const i = buffer.uri.indexOf('base64,');
+    if (i < 0) throw new Error('data uri is not base64');
+    return decodeBase64(buffer.uri.slice(i + 7));
+  }
+  const url = new URL(buffer.uri, new URL(gltfUrl, location.href)).href;
+  return new Uint8Array(await (await fetch(url)).arrayBuffer());
+}
+
+async function geomFromGLTF(url) {
+  if (/\.glb$/i.test(url)) {
+    const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (dv.getUint32(0, true) !== 0x46546C67) throw new Error('not a glb');
+    let off = 12;
+    let json = null;
+    let bin = null;
+    while (off + 8 <= bytes.length) {
+      const chunkLen = dv.getUint32(off, true);
+      const chunkType = dv.getUint32(off + 4, true);
+      off += 8;
+      const data = bytes.subarray(off, off + chunkLen);
+      if (chunkType === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(data));
+      else if (chunkType === 0x004E4942) bin = data;
+      off += chunkLen;
+    }
+    if (!json) throw new Error('glb missing JSON');
+    return geomFromGltfJson(json, bin);
+  }
+  const gltf = await (await fetch(url)).json();
+  const bin = await loadGltfBuffer(url, gltf.buffers[0]);
+  return geomFromGltfJson(gltf, bin);
+}
+
+function geomFromGltfJson(gltf, bin) {
+  const prim = gltf.meshes[0].primitives[0];
+  const mode = prim.mode === undefined ? 4 : prim.mode;
+  if (mode !== 4) throw new Error('only TRIANGLES glTF is supported');
+  const positions = readAccessor(gltf, bin, prim.attributes.POSITION);
+  let uvs = null;
+  if (prim.attributes.TEXCOORD_0 !== undefined) {
+    uvs = readAccessor(gltf, bin, prim.attributes.TEXCOORD_0);
+  }
+  let indices;
+  if (prim.indices !== undefined) {
+    indices = readAccessor(gltf, bin, prim.indices).map(r => r[0]);
+  } else {
+    indices = positions.map((_, i) => i);
+  }
+  const posAttr = [];
+  const uvAttr = [];
+  for (const idx of indices) {
+    posAttr.push(...positions[idx]);
+    if (uvs && uvs[idx]) uvAttr.push(uvs[idx][0], uvs[idx][1]);
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(posAttr, 3));
+  if (uvAttr.length === (posAttr.length / 3) * 2) {
+    geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvAttr, 2));
+  }
+  geom.computeVertexNormals();
+  return geom;
+}
+
 function geomFromOBJ(text) {
   const verts = [];
   const uvs = [];
@@ -164,8 +262,12 @@ for (const body of spec.bodies) {
   } else if (body.shape.type === 'mesh') {
     const rel = body.shape.path || '';
     const url = rel.startsWith('/') ? rel : '/' + rel;
-    const objText = await (await fetch(url)).text();
-    geom = geomFromOBJ(objText);
+    if (/\.gltf$/i.test(rel) || /\.glb$/i.test(rel)) {
+      geom = await geomFromGLTF(url);
+    } else {
+      const objText = await (await fetch(url)).text();
+      geom = geomFromOBJ(objText);
+    }
   } else {
     continue;
   }

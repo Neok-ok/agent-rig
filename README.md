@@ -1,6 +1,6 @@
-# agent-rig (increments 1–7)
+# agent-rig (increments 1–8)
 
-Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes, with optional albedo textures). No GPU. No Three.js in the engine.
+Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures). No GPU. No Three.js in the engine.
 
 ## Increment 1
 
@@ -243,6 +243,42 @@ cd /workspace/agent-rig && ./scripts/increment7-threejs.sh
 
 Writes `artifacts/increment7/threejs-frame.png` (stock MeshStandardMaterial, ambient 0.25 + directional, shadows on, no env map, no tonemap, 800x450). Loads the increment-7 scene JSON (bowl + rock OBJs) and applies `physics.json` poses.
 
+
+## Increment 8
+
+glTF mesh body in the increment-7 courtyard: a low-poly hexagonal pillar (`meshes/pillar.gltf`) sits in the dish with the textured rock and metal ball. `load_mesh` dispatches on extension (`.obj` / `.gltf` / `.glb`). Physics uses a `convex_hull` collider on the pillar; the dump records `collider` for that body and a contact involving it.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment8.sh
+```
+
+Writes:
+
+- `artifacts/increment8/scene.json` — authored scene (bowl + rock + ball + glTF pillar)
+- `artifacts/increment8/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment8/frame.png` — our renderer, 800x450, post-step poses
+- `artifacts/increment8/threejs-frame.png` — stock Three.js, same poses
+
+### CLI
+
+```bash
+agent-rig increment8 --out artifacts/increment8
+agent-rig sim artifacts/increment8/scene.json --out artifacts/increment8-sim
+agent-rig render artifacts/increment8/scene.json --physics artifacts/increment8/physics.json --out artifacts/increment8/frame.png
+```
+
+`sim` / `render` load the glTF path from `shape.path`.
+
+### Three.js baseline (same post-step poses)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment8-threejs.sh
+```
+
+Writes `artifacts/increment8/threejs-frame.png` (stock MeshStandardMaterial, ambient 0.25 + directional, shadows on, no env map, no tonemap, 800x450). Loads the increment-8 scene JSON (bowl + rock OBJs and the glTF pillar) and applies `physics.json` poses.
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
@@ -250,7 +286,7 @@ JSON object with `camera`, `lights`, and `bodies`.
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`
 - `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path)
-- mesh `path` and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body.
+- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only.
 
 Gravity is `[0, -9.81, 0]`.
 
@@ -273,3 +309,5 @@ Increment 5: a non-solid albedo PNG loads; the increment-5 mesh material points 
 Increment 6: two distinct mesh files load (different paths / vertex counts); the scene has two mesh bodies; after stepping there is a contact involving a mesh and the dump records collider type for both; `increment6` writes scene + physics dump + our PNG.
 
 Increment 7: the environment / ground body is a triangle mesh (not a box); after stepping there is a contact against that mesh and the dump records `trimesh`; `increment7` writes scene + physics dump + our PNG.
+
+Increment 8: a glTF/GLB file loads (vertex/triangle counts > 0); the scene has a mesh body whose path ends in `.gltf` or `.glb`; after stepping there is a contact involving that body and the dump records its collider type; `increment8` writes scene + physics dump + our PNG.

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::mesh::{load_obj, resolve_mesh_path, resolve_texture_path, TriangleMesh};
+use crate::mesh::{load_mesh, resolve_mesh_path, resolve_texture_path, TriangleMesh};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scene {
@@ -93,7 +93,7 @@ impl Scene {
     }
 
     pub fn load_body_mesh(&self, path: &str) -> Result<TriangleMesh, String> {
-        load_obj(&self.resolve_mesh(path)?)
+        load_mesh(&self.resolve_mesh(path)?)
     }
 
     pub fn resolve_texture(&self, path: &str) -> Result<PathBuf, String> {
@@ -451,5 +451,53 @@ pub fn increment7_scene_json() -> &'static str {
 pub fn increment7_scene() -> Scene {
     parse_scene(INCREMENT7_SCENE_JSON)
         .expect("increment7 scene JSON is valid")
+        .with_default_mesh_search()
+}
+
+pub const INCREMENT8_SCENE_JSON: &str = r#"{
+  "camera": { "position": [3.6, 2.35, 5.2], "look_at": [0.1, 0.38, 0.0], "fov_y_deg": 40 },
+  "lights": [{ "type": "directional", "direction": [-0.45, -1.0, -0.35], "color": [1.0, 0.97, 0.92], "intensity": 3.0 }],
+  "bodies": [
+    {
+      "id": "ground",
+      "shape": { "type": "mesh", "path": "meshes/bowl.obj", "collider": "trimesh" },
+      "position": [0, 0, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "material": { "albedo": [0.48, 0.44, 0.38], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "rock",
+      "shape": { "type": "mesh", "path": "meshes/rock.obj", "collider": "convex_hull" },
+      "position": [0.40, 0.002, 0.08],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 12.0,
+      "material": { "albedo": [0.48, 0.52, 0.62], "roughness": 0.28, "metallic": 0.2, "albedo_map": "textures/rock.png" }
+    },
+    {
+      "id": "ball",
+      "shape": { "type": "sphere", "radius": 0.32 },
+      "position": [-1.10, 0.36, 0.10],
+      "mass": 1.0,
+      "material": { "albedo": [0.92, 0.78, 0.45], "roughness": 0.15, "metallic": 0.9 }
+    },
+    {
+      "id": "pillar",
+      "shape": { "type": "mesh", "path": "meshes/pillar.gltf", "collider": "convex_hull" },
+      "position": [1.10, 0.002, 0.70],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 16.0,
+      "material": { "albedo": [0.74, 0.64, 0.50], "roughness": 0.76, "metallic": 0.0 }
+    }
+  ]
+}"#;
+
+pub fn increment8_scene_json() -> &'static str {
+    INCREMENT8_SCENE_JSON
+}
+
+pub fn increment8_scene() -> Scene {
+    parse_scene(INCREMENT8_SCENE_JSON)
+        .expect("increment8 scene JSON is valid")
         .with_default_mesh_search()
 }
