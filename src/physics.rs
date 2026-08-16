@@ -30,12 +30,66 @@ pub struct PhysicsContact {
     pub normal: [f32; 3],
 }
 
-pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, String> {
-    let mut rigid_body_set = RigidBodySet::new();
-    let mut collider_set = ColliderSet::new();
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Trajectory {
+    pub dt: f32,
+    pub frame_stride: u32,
+    pub frames: Vec<TrajectoryFrame>,
+}
 
-    let mut body_handles: HashMap<String, RigidBodyHandle> = HashMap::new();
-    let mut collider_to_id: HashMap<ColliderHandle, String> = HashMap::new();
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrajectoryFrame {
+    pub step: u32,
+    pub bodies: Vec<PhysicsBodyState>,
+    pub contacts: Vec<PhysicsContact>,
+}
+
+struct PhysicsWorld {
+    rigid_body_set: RigidBodySet,
+    collider_set: ColliderSet,
+    body_handles: HashMap<String, RigidBodyHandle>,
+    collider_to_id: HashMap<ColliderHandle, String>,
+    body_ids: Vec<String>,
+    gravity: Vector<f32>,
+    integration_parameters: IntegrationParameters,
+    physics_pipeline: PhysicsPipeline,
+    island_manager: IslandManager,
+    broad_phase: DefaultBroadPhase,
+    narrow_phase: NarrowPhase,
+    impulse_joint_set: ImpulseJointSet,
+    multibody_joint_set: MultibodyJointSet,
+    ccd_solver: CCDSolver,
+    query_pipeline: QueryPipeline,
+}
+
+impl PhysicsWorld {
+    fn from_scene(scene: &Scene, dt: f32) -> Self {
+        let mut world = Self {
+            rigid_body_set: RigidBodySet::new(),
+            collider_set: ColliderSet::new(),
+            body_handles: HashMap::new(),
+            collider_to_id: HashMap::new(),
+            body_ids: Vec::new(),
+            gravity: vector![0.0, -9.81, 0.0],
+            integration_parameters: {
+                let mut p = IntegrationParameters::default();
+                p.dt = dt;
+                p
+            },
+            physics_pipeline: PhysicsPipeline::new(),
+            island_manager: IslandManager::new(),
+            broad_phase: DefaultBroadPhase::new(),
+            narrow_phase: NarrowPhase::new(),
+            impulse_joint_set: ImpulseJointSet::new(),
+            multibody_joint_set: MultibodyJointSet::new(),
+            ccd_solver: CCDSolver::new(),
+            query_pipeline: QueryPipeline::new(),
+        };
+        world.populate(scene);
+        world
+    }
+
+    fn populate(&mut self, scene: &Scene) {
 
     for body in &scene.bodies {
         let [x, y, z] = body.position;
@@ -52,7 +106,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
                 .linvel(vector![vx, vy, vz])
                 .build()
         };
-        let handle = rigid_body_set.insert(rb);
+        let handle = self.rigid_body_set.insert(rb);
 
         // Density from authored mass so inertia is non-zero (needed for body-body hits).
         let collider = match body.shape {
@@ -75,91 +129,70 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
                 b.build()
             }
         };
-        let ch = collider_set.insert_with_parent(collider, handle, &mut rigid_body_set);
-        body_handles.insert(body.id.clone(), handle);
-        collider_to_id.insert(ch, body.id.clone());
+        let ch = self.collider_set.insert_with_parent(collider, handle, &mut self.rigid_body_set);
+            self.body_handles.insert(body.id.clone(), handle);
+            self.collider_to_id.insert(ch, body.id.clone());
+            self.body_ids.push(body.id.clone());
+        }
     }
 
-    let gravity = vector![0.0, -9.81, 0.0];
-    let mut integration_parameters = IntegrationParameters::default();
-    integration_parameters.dt = dt;
-
-    let mut physics_pipeline = PhysicsPipeline::new();
-    let mut island_manager = IslandManager::new();
-    let mut broad_phase = DefaultBroadPhase::new();
-    let mut narrow_phase = NarrowPhase::new();
-    let mut impulse_joint_set = ImpulseJointSet::new();
-    let mut multibody_joint_set = MultibodyJointSet::new();
-    let mut ccd_solver = CCDSolver::new();
-    let mut query_pipeline = QueryPipeline::new();
-
-    for _ in 0..steps {
-        physics_pipeline.step(
-            &gravity,
-            &integration_parameters,
-            &mut island_manager,
-            &mut broad_phase,
-            &mut narrow_phase,
-            &mut rigid_body_set,
-            &mut collider_set,
-            &mut impulse_joint_set,
-            &mut multibody_joint_set,
-            &mut ccd_solver,
-            Some(&mut query_pipeline),
+    fn step(&mut self) {
+        self.physics_pipeline.step(
+            &self.gravity,
+            &self.integration_parameters,
+            &mut self.island_manager,
+            &mut self.broad_phase,
+            &mut self.narrow_phase,
+            &mut self.rigid_body_set,
+            &mut self.collider_set,
+            &mut self.impulse_joint_set,
+            &mut self.multibody_joint_set,
+            &mut self.ccd_solver,
+            Some(&mut self.query_pipeline),
             &(),
             &(),
         );
     }
 
-    let mut bodies = Vec::new();
-    for body in &scene.bodies {
-        let handle = body_handles
-            .get(&body.id)
-            .ok_or_else(|| format!("missing body {}", body.id))?;
-        let rb = &rigid_body_set[*handle];
-        let t = rb.translation();
-        let r = rb.rotation();
-        let lv = rb.linvel();
-        let av = rb.angvel();
-        bodies.push(PhysicsBodyState {
-            id: body.id.clone(),
-            position: [t.x, t.y, t.z],
-            rotation_wxyz: [r.w, r.i, r.j, r.k],
-            linear_velocity: [lv.x, lv.y, lv.z],
-            angular_velocity: [av.x, av.y, av.z],
-        });
+    fn snapshot_bodies(&self) -> Vec<PhysicsBodyState> {
+        let mut bodies = Vec::new();
+        for id in &self.body_ids {
+            let handle = self.body_handles[id];
+            let rb = &self.rigid_body_set[handle];
+            let t = rb.translation();
+            let r = rb.rotation();
+            let lv = rb.linvel();
+            let av = rb.angvel();
+            bodies.push(PhysicsBodyState {
+                id: id.clone(),
+                position: [t.x, t.y, t.z],
+                rotation_wxyz: [r.w, r.i, r.j, r.k],
+                linear_velocity: [lv.x, lv.y, lv.z],
+                angular_velocity: [av.x, av.y, av.z],
+            });
+        }
+        bodies
     }
 
-    let mut contacts = Vec::new();
-    for pair in narrow_phase.contact_pairs() {
-        if !pair.has_any_active_contact {
-            continue;
-        }
-        let Some(id_a) = collider_to_id.get(&pair.collider1) else {
-            continue;
-        };
-        let Some(id_b) = collider_to_id.get(&pair.collider2) else {
-            continue;
-        };
-        let c1 = &collider_set[pair.collider1];
-
-        let mut pushed = false;
-        for manifold in &pair.manifolds {
-            for sc in &manifold.data.solver_contacts {
-                let p = sc.point;
-                let n = manifold.data.normal;
-                contacts.push(PhysicsContact {
-                    body_a: id_a.clone(),
-                    body_b: id_b.clone(),
-                    point: [p.x, p.y, p.z],
-                    normal: [n.x, n.y, n.z],
-                });
-                pushed = true;
+    fn snapshot_contacts(&self) -> Vec<PhysicsContact> {
+        let mut contacts = Vec::new();
+        for pair in self.narrow_phase.contact_pairs() {
+            if !pair.has_any_active_contact {
+                continue;
             }
-            if !pushed {
-                for contact in &manifold.points {
-                    let p = c1.position() * contact.local_p1;
-                    let n = c1.position() * manifold.local_n1;
+            let Some(id_a) = self.collider_to_id.get(&pair.collider1) else {
+                continue;
+            };
+            let Some(id_b) = self.collider_to_id.get(&pair.collider2) else {
+                continue;
+            };
+            let c1 = &self.collider_set[pair.collider1];
+
+            let mut pushed = false;
+            for manifold in &pair.manifolds {
+                for sc in &manifold.data.solver_contacts {
+                    let p = sc.point;
+                    let n = manifold.data.normal;
                     contacts.push(PhysicsContact {
                         body_a: id_a.clone(),
                         body_b: id_b.clone(),
@@ -168,15 +201,73 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
                     });
                     pushed = true;
                 }
+                if !pushed {
+                    for contact in &manifold.points {
+                        let p = c1.position() * contact.local_p1;
+                        let n = c1.position() * manifold.local_n1;
+                        contacts.push(PhysicsContact {
+                            body_a: id_a.clone(),
+                            body_b: id_b.clone(),
+                            point: [p.x, p.y, p.z],
+                            normal: [n.x, n.y, n.z],
+                        });
+                        pushed = true;
+                    }
+                }
             }
         }
+        contacts
     }
 
+    fn snapshot_frame(&self, step: u32) -> TrajectoryFrame {
+        TrajectoryFrame {
+            step,
+            bodies: self.snapshot_bodies(),
+            contacts: self.snapshot_contacts(),
+        }
+    }
+}
+
+pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, String> {
+    let mut world = PhysicsWorld::from_scene(scene, dt);
+    for _ in 0..steps {
+        world.step();
+    }
     Ok(PhysicsDump {
         steps,
         dt,
         gravity: [0.0, -9.81, 0.0],
-        bodies,
-        contacts,
+        bodies: world.snapshot_bodies(),
+        contacts: world.snapshot_contacts(),
+    })
+}
+
+/// Step physics and record a snapshot every `frame_stride` steps, including step 0.
+/// `frame_count` is the number of snapshots (and later, PNGs), not the physics step count.
+pub fn simulate_trajectory(
+    scene: &Scene,
+    frame_count: u32,
+    frame_stride: u32,
+    dt: f32,
+) -> Result<Trajectory, String> {
+    if frame_count == 0 {
+        return Err("frame_count must be ≥ 1".into());
+    }
+    if frame_stride == 0 {
+        return Err("frame_stride must be ≥ 1".into());
+    }
+    let mut world = PhysicsWorld::from_scene(scene, dt);
+    let mut frames = Vec::with_capacity(frame_count as usize);
+    frames.push(world.snapshot_frame(0));
+    for i in 1..frame_count {
+        for _ in 0..frame_stride {
+            world.step();
+        }
+        frames.push(world.snapshot_frame(i * frame_stride));
+    }
+    Ok(Trajectory {
+        dt,
+        frame_stride,
+        frames,
     })
 }

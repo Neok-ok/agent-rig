@@ -28,14 +28,31 @@ const HEIGHT = 450;
 const params = new URLSearchParams(location.search);
 const sceneUrl = params.get('scene') || '/artifacts/increment2/scene.json';
 const physicsUrl = params.get('physics') || '/artifacts/increment2/physics.json';
+const trajectoryUrl = params.get('trajectory');
 
 const spec = await (await fetch(sceneUrl)).json();
 let poses = {};
+function applyBodies(list) {
+  for (const b of list || []) poses[b.id] = b;
+}
 try {
-  const phys = await (await fetch(physicsUrl)).json();
-  for (const b of phys.bodies || []) poses[b.id] = b;
+  if (trajectoryUrl) {
+    const traj = await (await fetch(trajectoryUrl)).json();
+    const frames = traj.frames || [];
+    let idx = frames.length - 1;
+    if (params.has('frame')) idx = parseInt(params.get('frame'), 10);
+    if (idx < 0 || idx >= frames.length) idx = frames.length - 1;
+    if (frames[idx]) applyBodies(frames[idx].bodies);
+  } else {
+    const phys = await (await fetch(physicsUrl)).json();
+    if (phys.frames && phys.frames.length) {
+      applyBodies(phys.frames[phys.frames.length - 1].bodies);
+    } else {
+      applyBodies(phys.bodies);
+    }
+  }
 } catch (e) {
-  // render authored poses if physics is missing
+  // render authored poses if physics/trajectory is missing
 }
 
 const scene = new THREE.Scene();

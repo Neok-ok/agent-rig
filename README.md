@@ -1,4 +1,4 @@
-# agent-rig (increments 1–2)
+# agent-rig (increments 1–3)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres and boxes). No GPU. No Three.js in the engine.
 
@@ -65,6 +65,40 @@ cd /workspace/agent-rig && ./scripts/increment2-threejs.sh
 
 Writes `artifacts/increment2/threejs-frame.png` (stock MeshStandardMaterial, ambient 0.25 + directional, shadows on, no env map, no tonemap, 800x450). Loads the increment-2 scene JSON and applies `physics.json` poses.
 
+
+## Increment 3
+
+Ramp scene: static ground, a static box rotated ~30° about Z as a ramp, a metal ball at the top, and a rough dielectric crate at the bottom. Physics is stepped over time; a PNG is emitted every stride (default 10 frames, stride 20 → 180 steps). Same JSON schema and light as increment 2.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment3.sh
+```
+
+Writes:
+
+- `artifacts/increment3/scene.json` — authored ramp scene
+- `artifacts/increment3/trajectory.json` — snapshots (positions, velocities, contacts) at each emitted frame
+- `artifacts/increment3/frame.png` — our renderer, 800x450, last frame
+- `artifacts/increment3/frames/frame_00.png` … — one PNG per snapshot
+
+### CLI
+
+```bash
+agent-rig sim artifacts/increment3/scene.json --frames 10 --out artifacts/increment3
+```
+
+`--frames` is the number of PNGs. Internally the world is stepped `stride` times between frames (default 20). `demo`, `increment2`, `step`, and `render` are unchanged.
+
+### Three.js baseline (same last-frame pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment3-threejs.sh
+```
+
+Writes `artifacts/increment3/threejs-frame.png` (stock MeshStandardMaterial, ambient 0.25 + directional, shadows on, no env map, no tonemap, 800x450). Loads the increment-3 scene JSON and applies the last trajectory pose.
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
@@ -84,3 +118,5 @@ cd /workspace/agent-rig && cargo test
 Increment 1: parse the demo scene; after stepping, the ball has dropped and contacts the ground (or sits at rest height); render is an 800x450 PNG larger than 1KB and not a solid color; the increment-1 path writes all three artifact files; the Three.js baseline PNG can be produced and is a real image.
 
 Increment 2: scene parses with ≥3 non-ground bodies, a sphere and a box, metal and rough dielectric; after stepping, at least two dynamic bodies have moved and the dump has contacts (including a non-ground pair); `step` / `render` write the named files; `run_increment2` writes the three artifacts.
+
+Increment 3: scene has a ramp (rotated static box); `sim` writes ≥8 frame PNGs and a trajectory dump with one snapshot per frame; a dynamic body moves across the trajectory; `increment3.sh` writes scene + trajectory + last-frame + frames/.

@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
 use agent_rig::{
-    render_scene_file, run_increment1, run_increment2, step_scene_file, DEFAULT_DT, DEFAULT_STEPS,
-    FRAME_HEIGHT, FRAME_WIDTH, INCREMENT2_STEPS,
+    render_scene_file, run_increment1, run_increment2, run_increment3, sim_scene_file, step_scene_file,
+    DEFAULT_DT, DEFAULT_STEPS, FRAME_HEIGHT, FRAME_WIDTH, INCREMENT2_STEPS, INCREMENT3_FRAMES,
+    INCREMENT3_STRIDE,
 };
 use clap::{Parser, Subcommand};
 
@@ -70,6 +71,33 @@ enum Command {
         #[arg(long, default_value_t = FRAME_HEIGHT)]
         height: u32,
     },
+    /// Increment 3: write ramp scene, simulate over time, render frame PNGs.
+    Increment3 {
+        #[arg(long, default_value = "artifacts/increment3")]
+        out: PathBuf,
+        #[arg(long, default_value_t = INCREMENT3_FRAMES)]
+        frames: u32,
+        #[arg(long, default_value_t = INCREMENT3_STRIDE)]
+        stride: u32,
+        #[arg(long, default_value_t = FRAME_WIDTH)]
+        width: u32,
+        #[arg(long, default_value_t = FRAME_HEIGHT)]
+        height: u32,
+    },
+    /// Simulate a scene over time: N frame PNGs + trajectory dump.
+    Sim {
+        scene: PathBuf,
+        #[arg(long, default_value_t = INCREMENT3_FRAMES)]
+        frames: u32,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long, default_value_t = INCREMENT3_STRIDE)]
+        stride: u32,
+        #[arg(long, default_value_t = FRAME_WIDTH)]
+        width: u32,
+        #[arg(long, default_value_t = FRAME_HEIGHT)]
+        height: u32,
+    },
 }
 
 fn main() {
@@ -103,11 +131,37 @@ fn main() {
             println!("wrote {}", out.display());
             None
         }),
+        Some(Command::Increment3 {
+            out,
+            frames,
+            stride,
+            width,
+            height,
+        }) => run_increment3(&out, frames, stride, DEFAULT_DT, width, height).map(|paths| {
+            println!("wrote {}", paths.scene.display());
+            println!("wrote {}", paths.trajectory.display());
+            println!("wrote {}", paths.frame.display());
+            println!("wrote {}", paths.frames_dir.display());
+            None
+        }),
+        Some(Command::Sim {
+            scene,
+            frames,
+            out,
+            stride,
+            width,
+            height,
+        }) => sim_scene_file(&scene, &out, frames, stride, DEFAULT_DT, width, height).map(|paths| {
+            println!("wrote {}", paths.trajectory.display());
+            println!("wrote {}", paths.frame.display());
+            println!("wrote {}", paths.frames_dir.display());
+            None
+        }),
         None if args.demo => {
             run_increment1(&args.out, args.steps, DEFAULT_DT, args.width, args.height).map(Some)
         }
         None => {
-            eprintln!("usage: agent-rig <demo|increment2|step|render> …  (or --demo for increment 1)");
+            eprintln!("usage: agent-rig <demo|increment2|increment3|sim|step|render> …  (or --demo for increment 1)");
             std::process::exit(2);
         }
     };
