@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use agent_rig::{
-    increment10_scene, increment10_scene_json, parse_scene, render_scene, run_increment10,
-    simulate_trajectory, step_physics, Light, Shape, DEFAULT_DT, INCREMENT10_STEPS,
+    increment11_scene, increment11_scene_json, parse_scene, point_light_occluded, render_scene,
+    run_increment11, simulate_trajectory, step_physics, Light, Shape, DEFAULT_DT, INCREMENT11_STEPS,
 };
 
 fn gltf_body(scene: &agent_rig::Scene) -> &agent_rig::Body {
@@ -18,10 +18,18 @@ fn gltf_body(scene: &agent_rig::Scene) -> &agent_rig::Body {
         .expect("scene must contain a glTF/GLB mesh body")
 }
 
+fn point_light_pos(scene: &agent_rig::Scene) -> [f32; 3] {
+    for light in &scene.lights {
+        if let Light::Point { position, .. } = light {
+            return *position;
+        }
+    }
+    panic!("scene missing point light");
+}
 
 #[test]
-fn scene_has_point_and_directional_lights() {
-    let scene = parse_scene(increment10_scene_json()).expect("increment10 JSON should parse");
+fn scene_has_point_and_directional_and_courtyard() {
+    let scene = parse_scene(increment11_scene_json()).expect("increment11 JSON should parse");
     let mut has_dir = false;
     let mut has_point = false;
     for light in &scene.lights {
@@ -57,8 +65,8 @@ fn scene_has_point_and_directional_lights() {
             }
         }
     }
-    assert!(has_dir, "increment 10 keeps the directional");
-    assert!(has_point, "increment 10 adds a point light");
+    assert!(has_dir, "increment 11 keeps the directional");
+    assert!(has_point, "increment 11 keeps the point light");
 
     let has_bowl = scene
         .bodies
@@ -75,15 +83,15 @@ fn scene_has_point_and_directional_lights() {
     let has_pillar = gltf_body(&scene).id == "pillar";
     assert!(
         has_bowl && has_rock && has_ball && has_pillar,
-        "keep the increment-9 bowl + rock + ball + copper pillar"
+        "keep the increment-10 bowl + rock + ball + copper pillar"
     );
 }
 
 #[test]
 fn contact_involving_gltf_body_after_step() {
-    let scene = increment10_scene();
+    let scene = increment11_scene();
     let gltf_id = gltf_body(&scene).id.clone();
-    let dump = step_physics(&scene, INCREMENT10_STEPS, DEFAULT_DT).expect("physics");
+    let dump = step_physics(&scene, INCREMENT11_STEPS, DEFAULT_DT).expect("physics");
     let hit = dump
         .contacts
         .iter()
@@ -106,14 +114,14 @@ fn contact_involving_gltf_body_after_step() {
 }
 
 #[test]
-fn increment10_writes_scene_dump_and_png() {
-    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts/increment10.sh");
-    assert!(script.is_file(), "scripts/increment10.sh must exist");
+fn increment11_writes_scene_dump_and_png() {
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts/increment11.sh");
+    assert!(script.is_file(), "scripts/increment11.sh must exist");
 
-    let out = PathBuf::from("target/test-increment10-artifacts");
+    let out = PathBuf::from("target/test-increment11-artifacts");
     let _ = fs::remove_dir_all(&out);
-    let paths = run_increment10(&out, INCREMENT10_STEPS, DEFAULT_DT, 200, 112)
-        .expect("run_increment10");
+    let paths = run_increment11(&out, INCREMENT11_STEPS, DEFAULT_DT, 200, 112)
+        .expect("run_increment11");
     assert!(paths.scene.is_file(), "missing scene.json");
     assert!(paths.physics.is_file(), "missing physics.json");
     assert!(paths.frame.is_file(), "missing frame.png");
@@ -165,15 +173,90 @@ fn increment10_writes_scene_dump_and_png() {
 }
 
 #[test]
-fn png_shows_local_point_light_falloff() {
-    let scene = increment10_scene();
+fn point_light_shadow_ray_occluded_behind_box() {
+    let json = r#"{
+      "camera": { "position": [0, 2, 6], "look_at": [0, 0.3, 0], "fov_y_deg": 40 },
+      "lights": [
+        { "type": "directional", "direction": [0, -1, 0], "color": [1, 1, 1], "intensity": 0.2 },
+        { "type": "point", "position": [2.0, 1.2, 0.0], "color": [1.0, 0.8, 0.5], "intensity": 12.0 }
+      ],
+      "bodies": [
+        {
+          "id": "ground",
+          "shape": { "type": "box", "size": [10, 0.2, 10] },
+          "position": [0, -0.1, 0],
+          "mass": 0,
+          "material": { "albedo": [0.5, 0.5, 0.5], "roughness": 0.8, "metallic": 0.0 }
+        },
+        {
+          "id": "wall",
+          "shape": { "type": "box", "size": [0.3, 1.6, 2.0] },
+          "position": [0.0, 0.8, 0.0],
+          "mass": 0,
+          "material": { "albedo": [0.6, 0.6, 0.6], "roughness": 0.7, "metallic": 0.0 }
+        }
+      ]
+    }"#;
+    let scene = parse_scene(json).expect("occluder scene");
+    let lamp = [2.0, 1.2, 0.0];
+    let n = [0.0, 1.0, 0.0];
+    assert!(
+        point_light_occluded(&scene, [-1.2, 0.02, 0.0], n, lamp),
+        "floor behind the wall should be shadowed from the point light"
+    );
+    assert!(
+        !point_light_occluded(&scene, [1.2, 0.02, 0.0], n, lamp),
+        "floor on the lamp side of the wall should not be occluded"
+    );
+}
+
+#[test]
+fn courtyard_floor_behind_pillar_is_shadowed() {
+    let scene = increment11_scene();
+    let lamp = point_light_pos(&scene);
+    let pillar = scene
+        .bodies
+        .iter()
+        .find(|b| b.id == "pillar")
+        .expect("pillar");
+    // Project lamp -> pillar mid onto the bowl floor (y ~ 0.02).
+    let mid = [
+        pillar.position[0],
+        pillar.position[1] + 0.40,
+        pillar.position[2],
+    ];
+    let d = [mid[0] - lamp[0], mid[1] - lamp[1], mid[2] - lamp[2]];
+    let t = if d[1].abs() < 1e-4 {
+        2.0
+    } else {
+        (0.02 - lamp[1]) / d[1]
+    };
+    let far = [lamp[0] + d[0] * t, 0.02, lamp[2] + d[2] * t];
+    let n = [0.0, 1.0, 0.0];
+    assert!(
+        point_light_occluded(&scene, far, n, lamp),
+        "floor point {far:?} behind the pillar from lamp {lamp:?} should be occluded"
+    );
+    // Lamp-side floor, toward the camera from the lamp.
+    let near = [lamp[0] - 0.15, 0.02, lamp[2] + 0.25];
+    assert!(
+        !point_light_occluded(&scene, near, n, lamp),
+        "floor on the lamp side {near:?} should see the lamp"
+    );
+}
+
+#[test]
+fn png_has_darker_umbra_than_nearby_lit_floor() {
+    let scene = increment11_scene();
     let img = render_scene(&scene, 200, 112);
     let w = img.width() as f32;
     let h = img.height() as f32;
-    let mut near_acc = 0.0f32;
-    let mut near_n = 0usize;
-    let mut far_acc = 0.0f32;
-    let mut far_n = 0usize;
+    // Screen-space: pillar sits camera-right; its point-light umbra falls on the
+    // bowl floor just to the +X / -Z side of the pillar (away from the lamp).
+    let mut umbra_acc = 0.0f32;
+    let mut umbra_n = 0usize;
+    let mut lit_acc = 0.0f32;
+    let mut lit_n = 0usize;
     for (x, y, p) in img.enumerate_pixels() {
         let u = (x as f32 + 0.5) / w;
         let v = (y as f32 + 0.5) / h;
@@ -181,37 +264,36 @@ fn png_shows_local_point_light_falloff() {
         let g = p[1] as f32 / 255.0;
         let b = p[2] as f32 / 255.0;
         let l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        if l < 0.04 {
+        if l < 0.03 {
             continue;
         }
-        // Skip sky (top of frame). Keep blown-out local highlight pixels.
-        if v < 0.32 {
+        if v < 0.40 {
             continue;
         }
-        // Floor facing the lamp (courtyard center-right). Avoid the pillar umbra.
-        if (0.40..=0.54).contains(&u) && (0.60..=0.78).contains(&v) {
-            near_acc += l;
-            near_n += 1;
+        // Floor umbra to the camera-right of the pillar (away from the lamp).
+        if (0.61..=0.70).contains(&u) && (0.62..=0.72).contains(&v) {
+            umbra_acc += l;
+            umbra_n += 1;
         }
-        // Far left bowl rim, well away from the lamp.
-        if (0.02..=0.16).contains(&u) && (0.58..=0.82).contains(&v) {
-            far_acc += l;
-            far_n += 1;
+        // Nearby lit floor under the lamp (camera-left of the pillar).
+        if (0.42..=0.50).contains(&u) && (0.62..=0.72).contains(&v) {
+            lit_acc += l;
+            lit_n += 1;
         }
     }
-    assert!(near_n > 20, "expected near-lamp surface pixels, got {near_n}");
-    assert!(far_n > 20, "expected far-rim surface pixels, got {far_n}");
-    let near = near_acc / near_n as f32;
-    let far = far_acc / far_n as f32;
+    assert!(umbra_n > 10, "expected umbra floor pixels, got {umbra_n}");
+    assert!(lit_n > 10, "expected lit floor pixels, got {lit_n}");
+    let umbra = umbra_acc / umbra_n as f32;
+    let lit = lit_acc / lit_n as f32;
     assert!(
-        near > far + 0.06,
-        "local light should read brighter near the lamp than the far rim (near={near:.3} far={far:.3})"
+        umbra + 0.03 < lit,
+        "point-light umbra should be darker than nearby lit floor (umbra={umbra:.3} lit={lit:.3})"
     );
 }
 
 #[test]
 fn sim_and_render_load_point_light() {
-    let scene = increment10_scene();
+    let scene = increment11_scene();
     let has_point = scene
         .lights
         .iter()
@@ -228,11 +310,11 @@ fn sim_and_render_load_point_light() {
     assert_eq!(img.height(), 45);
 
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let out = manifest.join("target/test-increment10-cli");
+    let out = manifest.join("target/test-increment11-cli");
     let _ = fs::remove_dir_all(&out);
     fs::create_dir_all(&out).unwrap();
     let scene_path = out.join("scene.json");
-    fs::write(&scene_path, increment10_scene_json()).unwrap();
+    fs::write(&scene_path, increment11_scene_json()).unwrap();
 
     let frame_path = out.join("frame.png");
     let status = Command::new(env!("CARGO_BIN_EXE_agent-rig"))

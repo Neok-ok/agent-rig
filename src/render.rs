@@ -248,7 +248,7 @@ struct EnvSh {
     c: [V3; 9],
 }
 
-pub fn render_scene(scene: &Scene, width: u32, height: u32) -> RgbImage {
+fn scene_prims(scene: &Scene) -> Vec<Prim> {
     let mut prims: Vec<Prim> = Vec::with_capacity(scene.bodies.len());
     for b in &scene.bodies {
         let mut albedo = V3::from_arr(b.material.albedo);
@@ -335,6 +335,33 @@ pub fn render_scene(scene: &Scene, width: u32, height: u32) -> RgbImage {
             albedo_map,
         });
     }
+
+    prims
+}
+
+fn shadow_occluded(orig: V3, dir: V3, prims: &[Prim], tmax: f32) -> bool {
+    closest_hit(orig, dir, prims, EPS, tmax).is_some()
+}
+
+/// True if a ray from `hit_point` toward `light_pos` hits geometry before the lamp.
+pub fn point_light_occluded(
+    scene: &Scene,
+    hit_point: [f32; 3],
+    hit_normal: [f32; 3],
+    light_pos: [f32; 3],
+) -> bool {
+    let prims = scene_prims(scene);
+    let p = V3::from_arr(hit_point);
+    let n = V3::from_arr(hit_normal).norm();
+    let to_l = V3::from_arr(light_pos).sub(p);
+    let dist = to_l.len().max(1e-3);
+    let l = to_l.mul(1.0 / dist);
+    let orig = p.add(n.mul(EPS * 4.0));
+    shadow_occluded(orig, l, &prims, dist)
+}
+
+pub fn render_scene(scene: &Scene, width: u32, height: u32) -> RgbImage {
+    let prims = scene_prims(scene);
 
     let env = project_env_sh();
 
@@ -641,7 +668,7 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                     continue;
                 }
                 let shadow_orig = h.p.add(n.mul(EPS * 4.0));
-                if closest_hit(shadow_orig, l, prims, EPS, f32::MAX).is_some() {
+                if shadow_occluded(shadow_orig, l, prims, f32::MAX) {
                     continue;
                 }
                 // Keep the sun, but do not let intensity 3 nuke the IBL Y-gradient.
@@ -662,7 +689,11 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                 if n_dot_l <= 0.0 {
                     continue;
                 }
-                // Inverse-square falloff; no point-light shadows (directional keeps its rays).
+                // Inverse-square falloff; occlude if anything sits between the hit and the lamp.
+                let shadow_orig = h.p.add(n.mul(EPS * 4.0));
+                if shadow_occluded(shadow_orig, l, prims, dist) {
+                    continue;
+                }
                 let atten = 1.0 / (dist * dist);
                 let radiance = V3::from_arr(*lcol).mul(*intensity * atten);
                 color = color.add(cook_torrance(

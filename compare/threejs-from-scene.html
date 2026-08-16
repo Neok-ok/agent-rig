@@ -93,6 +93,10 @@ for (const light of spec.lights) {
     const pl = new THREE.PointLight(0xffffff, light.intensity);
     pl.color.setRGB(...light.color);
     pl.position.fromArray(light.position);
+    pl.castShadow = true;
+    pl.shadow.mapSize.set(1024, 1024);
+    pl.shadow.camera.near = 0.1;
+    pl.shadow.camera.far = 20;
     scene.add(pl);
   }
 }

@@ -1,6 +1,6 @@
-# agent-rig (increments 1–10)
+# agent-rig (increments 1–11)
 
-Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness). No GPU. No Three.js in the engine.
+Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness). Directional and point lights both cast shadow rays. No GPU. No Three.js in the engine.
 
 ## Increment 1
 
@@ -350,6 +350,42 @@ cd /workspace/agent-rig && ./scripts/increment10-threejs.sh
 
 Writes `artifacts/increment10/threejs-frame.png` (stock MeshStandardMaterial, ambient 0.25 + directional + PointLight at the scene position, shadows on the directional, no env map, no tonemap, 800x450).
 
+
+## Increment 11
+
+Same courtyard as increment 10 (bowl + rock + metal ball + copper pillar, directional + warm point light). The point light now casts a shadow ray: from the hit toward the lamp, if anything sits closer than the lamp, that point-light contribution is skipped. The pillar’s local umbra on the bowl floor is the readable cue an unshadowed point light would not make. IBL is unchanged.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment11.sh
+```
+
+Writes:
+
+- `artifacts/increment11/scene.json` — authored scene (increment-10 courtyard + both lights)
+- `artifacts/increment11/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment11/frame.png` — our renderer, 800x450, post-step poses (IBL + directional + shadowed point)
+- `artifacts/increment11/threejs-frame.png` — stock Three.js, same poses (PointLight + directional, both cast shadows, no IBL/tonemap)
+
+### CLI
+
+```bash
+agent-rig increment11 --out artifacts/increment11
+agent-rig sim artifacts/increment11/scene.json --out artifacts/increment11-sim
+agent-rig render artifacts/increment11/scene.json --physics artifacts/increment11/physics.json --out artifacts/increment11/frame.png
+```
+
+`sim` / `render` load the point light via the shared scene loader.
+
+### Three.js baseline (same post-step poses)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment11-threejs.sh
+```
+
+Writes `artifacts/increment11/threejs-frame.png` (stock MeshStandardMaterial, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450).
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
@@ -386,3 +422,5 @@ Increment 8: a glTF/GLB file loads (vertex/triangle counts > 0); the scene has a
 Increment 9: the glTF has `pbrMetallicRoughness.baseColorFactor` (and/or `baseColorTexture`); the loaded mesh uses that factor, not only the scene-JSON albedo (JSON is a dull-gray fallback); after stepping there is a contact involving the glTF body and the dump records its collider type; `increment9` writes scene + physics dump + our PNG.
 
 Increment 10: the scene has a point light (`position`, `color`, `intensity`) plus the existing directional; `sim` / `render` load it; after stepping the glTF pillar still has a collider type and a contact in the dump; `increment10` writes scene + physics dump + our PNG (local highlight / falloff the directional alone would not make).
+
+Increment 11: the point light casts a shadow ray (occluded if something sits between the hit and the lamp); the courtyard and both lights stay; after stepping the glTF pillar still has a collider type and a contact in the dump; `increment11` writes scene + physics dump + our PNG (local umbra the unshadowed point light would not make).

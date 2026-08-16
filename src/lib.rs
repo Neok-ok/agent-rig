@@ -1,4 +1,4 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–10).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–11).
 
 mod mesh;
 mod physics;
@@ -6,12 +6,12 @@ mod render;
 mod scene;
 
 pub use physics::{simulate_trajectory, step_physics, PhysicsBodyState, PhysicsContact, PhysicsDump, Trajectory, TrajectoryFrame};
-pub use render::{render_scene, render_scene_to_png, FRAME_HEIGHT, FRAME_WIDTH};
+pub use render::{point_light_occluded, render_scene, render_scene_to_png, FRAME_HEIGHT, FRAME_WIDTH};
 pub use mesh::{load_gltf, load_mesh, load_obj, parse_obj, GltfPbrMaterial, TriangleMesh};
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
     increment3_scene_json, increment4_scene, increment4_scene_json, increment5_scene,
-    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, parse_scene, Body, Camera,
+    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, parse_scene, Body, Camera,
     Light, Material, MeshCollider, Scene, Shape,
 };
 
@@ -30,6 +30,7 @@ pub const INCREMENT7_STEPS: u32 = 100;
 pub const INCREMENT8_STEPS: u32 = 100;
 pub const INCREMENT9_STEPS: u32 = 100;
 pub const INCREMENT10_STEPS: u32 = 100;
+pub const INCREMENT11_STEPS: u32 = 100;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -81,6 +82,11 @@ pub fn run_increment9(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u
 /// Increment 10: increment-9 courtyard plus a local point light.
 pub fn run_increment10(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
     write_step_render(out_dir, &increment10_scene(), steps, dt, width, height)
+}
+
+/// Increment 11: same courtyard; the point light now casts shadow rays.
+pub fn run_increment11(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
+    write_step_render(out_dir, &increment11_scene(), steps, dt, width, height)
 }
 
 fn write_step_render(
