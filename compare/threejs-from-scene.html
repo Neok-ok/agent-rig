@@ -93,26 +93,47 @@ for (const light of spec.lights) {
 
 function geomFromOBJ(text) {
   const verts = [];
-  const faces = [];
+  const uvs = [];
+  const positions = [];
+  const uvAttr = [];
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
     const p = line.split(/\s+/);
     if (p[0] === 'v' && p.length >= 4) {
       verts.push([+p[1], +p[2], +p[3]]);
+    } else if (p[0] === 'vt' && p.length >= 3) {
+      uvs.push([+p[1], +p[2]]);
     } else if (p[0] === 'f') {
-      const idx = p.slice(1).map(t => parseInt(t.split('/')[0], 10) - 1);
-      for (let i = 1; i + 1 < idx.length; i++) {
-        faces.push(idx[0], idx[i], idx[i + 1]);
+      const corners = p.slice(1).map(tok => {
+        const s = tok.split('/');
+        return {
+          v: parseInt(s[0], 10) - 1,
+          vt: s[1] ? parseInt(s[1], 10) - 1 : -1,
+        };
+      });
+      for (let i = 1; i + 1 < corners.length; i++) {
+        for (const c of [corners[0], corners[i], corners[i + 1]]) {
+          positions.push(...verts[c.v]);
+          if (c.vt >= 0 && uvs[c.vt]) uvAttr.push(uvs[c.vt][0], uvs[c.vt][1]);
+        }
       }
     }
   }
-  const positions = [];
-  for (let i = 0; i < faces.length; i++) positions.push(...verts[faces[i]]);
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  if (uvAttr.length === (positions.length / 3) * 2) {
+    geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvAttr, 2));
+  }
   geom.computeVertexNormals();
   return geom;
+}
+
+function loadTexture(url) {
+  return new Promise((resolve, reject) => {
+    const loader = new THREE.TextureLoader();
+    loader.load(url, resolve, undefined, reject);
+  });
 }
 
 for (const body of spec.bodies) {
@@ -124,6 +145,17 @@ for (const body of spec.bodies) {
     roughness: body.material.roughness,
     metalness: body.material.metallic,
   });
+  if (body.material.albedo_map) {
+    const rel = body.material.albedo_map;
+    const url = rel.startsWith('/') ? rel : '/' + rel;
+    const tex = await loadTexture(url);
+    if ('SRGBColorSpace' in THREE) tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.needsUpdate = true;
+    mat.map = tex;
+    mat.needsUpdate = true;
+  }
   let geom;
   if (body.shape.type === 'box') {
     geom = new THREE.BoxGeometry(...body.shape.size);

@@ -139,6 +139,71 @@ struct Prim {
     albedo: V3,
     roughness: f32,
     metallic: f32,
+    albedo_map: Option<AlbedoMap>,
+}
+
+struct AlbedoMap {
+    width: u32,
+    height: u32,
+    pixels: Vec<V3>,
+}
+
+impl AlbedoMap {
+    fn load(path: &Path) -> Result<Self, String> {
+        let img = image::open(path)
+            .map_err(|e| format!("load albedo {path:?}: {e}"))?
+            .to_rgb8();
+        let width = img.width();
+        let height = img.height();
+        let mut pixels = Vec::with_capacity((width * height) as usize);
+        for px in img.pixels() {
+            pixels.push(V3::new(
+                srgb_u8_to_linear(px[0]),
+                srgb_u8_to_linear(px[1]),
+                srgb_u8_to_linear(px[2]),
+            ));
+        }
+        Ok(Self {
+            width,
+            height,
+            pixels,
+        })
+    }
+
+    fn sample(&self, u: f32, v: f32) -> V3 {
+        let w = self.width as f32;
+        let h = self.height as f32;
+        let u = u.rem_euclid(1.0);
+        let v = v.rem_euclid(1.0);
+        let x = u * w - 0.5;
+        let y = (1.0 - v) * h - 0.5;
+        let x0 = x.floor();
+        let y0 = y.floor();
+        let tx = x - x0;
+        let ty = y - y0;
+        let p00 = self.at(x0 as i32, y0 as i32);
+        let p10 = self.at(x0 as i32 + 1, y0 as i32);
+        let p01 = self.at(x0 as i32, y0 as i32 + 1);
+        let p11 = self.at(x0 as i32 + 1, y0 as i32 + 1);
+        lerp(lerp(p00, p10, tx), lerp(p01, p11, tx), ty)
+    }
+
+    fn at(&self, x: i32, y: i32) -> V3 {
+        let w = self.width as i32;
+        let h = self.height as i32;
+        let x = x.rem_euclid(w) as u32;
+        let y = y.rem_euclid(h) as u32;
+        self.pixels[(y * self.width + x) as usize]
+    }
+}
+
+fn srgb_u8_to_linear(c: u8) -> f32 {
+    let x = c as f32 / 255.0;
+    if x <= 0.04045 {
+        x / 12.92
+    } else {
+        ((x + 0.055) / 1.055).powf(2.4)
+    }
 }
 
 enum PrimKind {
@@ -146,6 +211,7 @@ enum PrimKind {
     Box { half: V3 },
     Mesh {
         tris: Vec<[V3; 3]>,
+        uvs: Vec<[[f32; 2]; 3]>,
         aabb_min: V3,
         aabb_max: V3,
     },
@@ -180,9 +246,10 @@ pub fn render_scene(scene: &Scene, width: u32, height: u32) -> RgbImage {
                 let rot = Quat::from_wxyz(b.rotation_wxyz);
                 let center = V3::from_arr(b.position);
                 let mut tris = Vec::with_capacity(mesh.indices.len());
+                let mut uvs = Vec::with_capacity(mesh.indices.len());
                 let mut aabb_min = V3::new(f32::MAX, f32::MAX, f32::MAX);
                 let mut aabb_max = V3::new(f32::MIN, f32::MIN, f32::MIN);
-                for idx in &mesh.indices {
+                for (tri_i, idx) in mesh.indices.iter().enumerate() {
                     let a = rot
                         .rotate(V3::from_arr(mesh.vertices[idx[0] as usize]))
                         .add(center);
@@ -205,14 +272,22 @@ pub fn render_scene(scene: &Scene, width: u32, height: u32) -> RgbImage {
                         );
                     }
                     tris.push([a, c0, c1]);
+                    uvs.push(mesh.triangle_uvs(tri_i));
                 }
                 PrimKind::Mesh {
                     tris,
+                    uvs,
                     aabb_min,
                     aabb_max,
                 }
             }
         };
+        let albedo_map = b.material.albedo_map.as_ref().map(|p| {
+            let resolved = scene
+                .resolve_texture(p)
+                .unwrap_or_else(|e| panic!("albedo_map {p}: {e}"));
+            AlbedoMap::load(&resolved).unwrap_or_else(|e| panic!("{e}"))
+        });
         prims.push(Prim {
             kind,
             center: V3::from_arr(b.position),
@@ -220,6 +295,7 @@ pub fn render_scene(scene: &Scene, width: u32, height: u32) -> RgbImage {
             albedo: V3::from_arr(b.material.albedo),
             roughness: b.material.roughness.clamp(0.04, 1.0),
             metallic: b.material.metallic.clamp(0.0, 1.0),
+            albedo_map,
         });
     }
 
@@ -292,9 +368,10 @@ fn intersect(orig: V3, dir: V3, p: &Prim, tmin: f32, tmax: f32) -> Option<Hit> {
         PrimKind::Box { half } => intersect_obb(orig, dir, p, *half, tmin, tmax),
         PrimKind::Mesh {
             tris,
+            uvs,
             aabb_min,
             aabb_max,
-        } => intersect_mesh(orig, dir, p, tris, *aabb_min, *aabb_max, tmin, tmax),
+        } => intersect_mesh(orig, dir, p, tris, uvs, *aabb_min, *aabb_max, tmin, tmax),
     }
 }
 
@@ -327,8 +404,16 @@ fn intersect_aabb(orig: V3, dir: V3, mn: V3, mx: V3, tmin: f32, tmax: f32) -> bo
     true
 }
 
-/// Möller–Trumbore. Faceted face normal.
-fn intersect_triangle(orig: V3, dir: V3, v0: V3, v1: V3, v2: V3, tmin: f32, tmax: f32) -> Option<(f32, V3)> {
+/// Möller–Trumbore. Faceted face normal + barycentric (u,v) of v1,v2.
+fn intersect_triangle(
+    orig: V3,
+    dir: V3,
+    v0: V3,
+    v1: V3,
+    v2: V3,
+    tmin: f32,
+    tmax: f32,
+) -> Option<(f32, V3, f32, f32)> {
     let e1 = v1.sub(v0);
     let e2 = v2.sub(v0);
     let pvec = dir.cross(e2);
@@ -351,7 +436,7 @@ fn intersect_triangle(orig: V3, dir: V3, v0: V3, v1: V3, v2: V3, tmin: f32, tmax
     if t < tmin || t > tmax {
         return None;
     }
-    Some((t, e1.cross(e2).norm()))
+    Some((t, e1.cross(e2).norm(), u, v))
 }
 
 fn intersect_mesh(
@@ -359,6 +444,7 @@ fn intersect_mesh(
     dir: V3,
     p: &Prim,
     tris: &[[V3; 3]],
+    uvs: &[[[f32; 2]; 3]],
     aabb_min: V3,
     aabb_max: V3,
     tmin: f32,
@@ -368,14 +454,19 @@ fn intersect_mesh(
         return None;
     }
     let mut best_t = tmax;
-    let mut best: Option<(f32, V3, V3)> = None;
-    for [v0, v1, v2] in tris {
-        if let Some((t, n)) = intersect_triangle(orig, dir, *v0, *v1, *v2, tmin, best_t) {
+    let mut best: Option<(f32, V3, V3, [f32; 2])> = None;
+    for ([v0, v1, v2], tuv) in tris.iter().zip(uvs.iter()) {
+        if let Some((t, n, bu, bv)) = intersect_triangle(orig, dir, *v0, *v1, *v2, tmin, best_t) {
             best_t = t;
-            best = Some((t, orig.add(dir.mul(t)), n));
+            let w = 1.0 - bu - bv;
+            let uv = [
+                tuv[0][0] * w + tuv[1][0] * bu + tuv[2][0] * bv,
+                tuv[0][1] * w + tuv[1][1] * bu + tuv[2][1] * bv,
+            ];
+            best = Some((t, orig.add(dir.mul(t)), n, uv));
         }
     }
-    best.map(|(t, pnt, n)| hit(t, pnt, n, p))
+    best.map(|(t, pnt, n, uv)| hit_uv(t, pnt, n, p, Some(uv)))
 }
 
 fn intersect_sphere(orig: V3, dir: V3, p: &Prim, radius: f32, tmin: f32, tmax: f32) -> Option<Hit> {
@@ -446,11 +537,19 @@ fn intersect_obb(orig: V3, dir: V3, p: &Prim, half: V3, tmin: f32, tmax: f32) ->
 }
 
 fn hit(t: f32, pnt: V3, n: V3, prim: &Prim) -> Hit {
+    hit_uv(t, pnt, n, prim, None)
+}
+
+fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
+    let albedo = match (&prim.albedo_map, uv) {
+        (Some(map), Some([u, v])) => map.sample(u, v),
+        _ => prim.albedo,
+    };
     Hit {
         t,
         p: pnt,
         n,
-        albedo: prim.albedo,
+        albedo,
         roughness: prim.roughness,
         metallic: prim.metallic,
     }
