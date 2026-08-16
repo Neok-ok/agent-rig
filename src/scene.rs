@@ -691,3 +691,11 @@ pub fn increment13_scene_json() -> &'static str {
 pub fn increment13_scene() -> Scene {
     increment11_scene()
 }
+
+pub fn increment14_scene_json() -> &'static str {
+    INCREMENT11_SCENE_JSON
+}
+
+pub fn increment14_scene() -> Scene {
+    increment11_scene()
+}

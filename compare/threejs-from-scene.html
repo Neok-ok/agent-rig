@@ -209,12 +209,26 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
       }
     }
   }
+  let normalTextureUrl = null;
+  if (mat.normalTexture && gltf.textures && gltf.images) {
+    const tex = gltf.textures[mat.normalTexture.index];
+    if (tex && tex.source !== undefined) {
+      const img = gltf.images[tex.source];
+      if (img && img.uri) {
+        normalTextureUrl = img.uri.startsWith('data:')
+          ? img.uri
+          : new URL(img.uri, new URL(gltfUrl, location.href)).href;
+      }
+    }
+  }
   return {
     baseColorFactor: factor,
     metallicFactor: pbr.metallicFactor === undefined ? 1 : pbr.metallicFactor,
     roughnessFactor: pbr.roughnessFactor === undefined ? 1 : pbr.roughnessFactor,
     textureUrl,
     mrTextureUrl,
+    normalTextureUrl,
+    normalScale: mat.normalTexture && mat.normalTexture.scale !== undefined ? mat.normalTexture.scale : 1,
   };
 }
 
@@ -245,6 +259,13 @@ function geomFromGltfJson(gltf, bin, gltfUrl) {
     geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvAttr, 2));
   }
   geom.computeVertexNormals();
+  if (geom.getAttribute('uv') && geom.getAttribute('normal')) {
+    const nVerts = posAttr.length / 3;
+    if (!geom.getIndex()) {
+      geom.setIndex(Array.from({ length: nVerts }, (_, i) => i));
+    }
+    try { geom.computeTangents(); } catch (e) { /* optional */ }
+  }
   return { geom, pbr: pbrFromGltf(gltf, prim, gltfUrl || '') };
 }
 
@@ -347,6 +368,19 @@ for (const body of spec.bodies) {
     // glTF convention: same packed map; Three.js reads roughness from G, metalness from B.
     mat.metalnessMap = mr;
     mat.roughnessMap = mr;
+    mat.needsUpdate = true;
+  }
+  if (gltfPbr && gltfPbr.normalTextureUrl) {
+    const nrm = await loadTexture(gltfPbr.normalTextureUrl);
+    if ('NoColorSpace' in THREE) nrm.colorSpace = THREE.NoColorSpace;
+    else if ('LinearSRGBColorSpace' in THREE) nrm.colorSpace = THREE.LinearSRGBColorSpace;
+    nrm.wrapS = THREE.RepeatWrapping;
+    nrm.wrapT = THREE.RepeatWrapping;
+    nrm.needsUpdate = true;
+    mat.normalMap = nrm;
+    if (THREE.Vector2) {
+      mat.normalScale = new THREE.Vector2(gltfPbr.normalScale, gltfPbr.normalScale);
+    }
     mat.needsUpdate = true;
   }
   const mesh = new THREE.Mesh(geom, mat);

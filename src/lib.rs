@@ -1,4 +1,4 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–13).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–14).
 
 mod mesh;
 mod physics;
@@ -7,11 +7,14 @@ mod scene;
 
 pub use physics::{simulate_trajectory, step_physics, PhysicsBodyState, PhysicsContact, PhysicsDump, Trajectory, TrajectoryFrame};
 pub use render::{point_light_occluded, render_scene, render_scene_to_png, FRAME_HEIGHT, FRAME_WIDTH};
-pub use mesh::{load_gltf, load_mesh, load_obj, parse_obj, GltfPbrMaterial, TriangleMesh};
+pub use mesh::{
+    apply_tbn, load_gltf, load_mesh, load_obj, parse_obj, tbn_from_positions_uvs, GltfPbrMaterial,
+    TriangleMesh,
+};
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
     increment3_scene_json, increment4_scene, increment4_scene_json, increment5_scene,
-    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, parse_scene, Body, Camera,
+    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, parse_scene, Body, Camera,
     Light, Material, MeshCollider, Scene, Shape,
 };
 
@@ -34,6 +37,7 @@ pub const INCREMENT11_STEPS: u32 = 100;
 pub const INCREMENT12_STEPS: u32 = 100;
 pub const INCREMENT12_ORBIT_FRAMES: u32 = 8;
 pub const INCREMENT13_STEPS: u32 = 100;
+pub const INCREMENT14_STEPS: u32 = 100;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -161,6 +165,11 @@ pub fn run_increment12(
 /// Increment 13: same courtyard; glTF metallicRoughnessTexture drives per-texel MR.
 pub fn run_increment13(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
     write_step_render(out_dir, &increment13_scene(), steps, dt, width, height)
+}
+
+/// Increment 14: same courtyard; glTF normalTexture drives tangent-space bump.
+pub fn run_increment14(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
+    write_step_render(out_dir, &increment14_scene(), steps, dt, width, height)
 }
 
 fn write_step_render(

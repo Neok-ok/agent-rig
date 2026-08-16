@@ -16,6 +16,12 @@ pub struct GltfPbrMaterial {
     pub metallic_roughness_texture_path: Option<PathBuf>,
     /// Embedded metallic-roughness map bytes.
     pub metallic_roughness_texture_bytes: Option<Vec<u8>>,
+    /// Sidecar tangent-space normal map (OpenGL, +Z up).
+    pub normal_texture_path: Option<PathBuf>,
+    /// Embedded tangent-space normal map bytes.
+    pub normal_texture_bytes: Option<Vec<u8>>,
+    /// glTF normalTexture.scale (xy multiplier, default 1).
+    pub normal_scale: f32,
 }
 
 impl GltfPbrMaterial {
@@ -34,6 +40,39 @@ impl GltfPbrMaterial {
     pub fn has_metallic_roughness_texture(&self) -> bool {
         self.metallic_roughness_texture_path.is_some()
             || self.metallic_roughness_texture_bytes.is_some()
+    }
+
+    pub fn has_normal_texture(&self) -> bool {
+        self.normal_texture_path.is_some() || self.normal_texture_bytes.is_some()
+    }
+
+    /// Sample tangent-space normal (OpenGL, +Z up). RGB unpacked as 2c-1, then normalized.
+    pub fn sample_tangent_space_normal(&self, u: f32, v: f32) -> Result<[f32; 3], String> {
+        if !self.has_normal_texture() {
+            return Ok([0.0, 0.0, 1.0]);
+        }
+        let img = if let Some(bytes) = &self.normal_texture_bytes {
+            image::load_from_memory(bytes)
+                .map_err(|e| format!("load normal bytes: {e}"))?
+                .to_rgb8()
+        } else if let Some(path) = &self.normal_texture_path {
+            image::open(path)
+                .map_err(|e| format!("load normal {path:?}: {e}"))?
+                .to_rgb8()
+        } else {
+            return Ok([0.0, 0.0, 1.0]);
+        };
+        let (r, g, b) = sample_linear_rgb(&img, u, v);
+        let mut x = (2.0 * r - 1.0) * self.normal_scale;
+        let mut y = (2.0 * g - 1.0) * self.normal_scale;
+        let mut z = 2.0 * b - 1.0;
+        let len = (x * x + y * y + z * z).sqrt();
+        if len > 1e-8 {
+            x /= len;
+            y /= len;
+            z /= len;
+        }
+        Ok([x, y, z])
     }
 
     /// Sample (metallic, roughness). Texture B/G win over scene-JSON constants;
@@ -104,6 +143,8 @@ pub struct TriangleMesh {
     pub tex_indices: Vec<[u32; 3]>,
     /// Present when the source glTF primitive referenced a material.
     pub gltf_material: Option<GltfPbrMaterial>,
+    /// Optional per-vertex TANGENT (xyz + handedness w). Empty if the file has none.
+    pub tangents: Vec<[f32; 4]>,
 }
 
 impl TriangleMesh {
@@ -124,6 +165,51 @@ impl TriangleMesh {
         ]
     }
 
+    pub fn geometric_normal(&self, tri: usize) -> [f32; 3] {
+        let idx = self.indices[tri];
+        let a = self.vertices[idx[0] as usize];
+        let b = self.vertices[idx[1] as usize];
+        let c = self.vertices[idx[2] as usize];
+        let e1 = sub3(b, a);
+        let e2 = sub3(c, a);
+        norm3(cross3(e1, e2))
+    }
+
+    /// Shading normal at a barycentric hit: TBN * sampled n_ts when a normal map is present.
+    pub fn shaded_normal(&self, tri: usize, bu: f32, bv: f32) -> Result<[f32; 3], String> {
+        let n = self.geometric_normal(tri);
+        let Some(gm) = &self.gltf_material else {
+            return Ok(n);
+        };
+        if !gm.has_normal_texture() {
+            return Ok(n);
+        }
+        let uvs = self.triangle_uvs(tri);
+        let w = 1.0 - bu - bv;
+        let uv = [
+            uvs[0][0] * w + uvs[1][0] * bu + uvs[2][0] * bv,
+            uvs[0][1] * w + uvs[1][1] * bu + uvs[2][1] * bv,
+        ];
+        let n_ts = gm.sample_tangent_space_normal(uv[0], uv[1])?;
+        let (t, b, n) = self.tbn_at(tri, bu, bv, n);
+        Ok(apply_tbn(t, b, n, n_ts))
+    }
+
+    pub fn tbn_at(&self, tri: usize, bu: f32, bv: f32, n: [f32; 3]) -> ([f32; 3], [f32; 3], [f32; 3]) {
+        let idx = self.indices[tri];
+        if self.tangents.len() == self.vertices.len() {
+            let t0 = self.tangents[idx[0] as usize];
+            let t1 = self.tangents[idx[1] as usize];
+            let t2 = self.tangents[idx[2] as usize];
+            return tbn_from_interpolated_tangent(t0, t1, t2, bu, bv, n);
+        }
+        let p0 = self.vertices[idx[0] as usize];
+        let p1 = self.vertices[idx[1] as usize];
+        let p2 = self.vertices[idx[2] as usize];
+        let uvs = self.triangle_uvs(tri);
+        tbn_from_positions_uvs(p0, p1, p2, uvs[0], uvs[1], uvs[2], n)
+    }
+
     /// Signed-tetrahedron volume (absolute). Closed meshes only.
     pub fn volume(&self) -> f32 {
         let mut vol = 0.0f32;
@@ -138,6 +224,128 @@ impl TriangleMesh {
         }
         vol.abs().max(1e-8)
     }
+}
+
+fn sub3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn add3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+fn mul3(a: [f32; 3], s: f32) -> [f32; 3] {
+    [a[0] * s, a[1] * s, a[2] * s]
+}
+
+fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn norm3(a: [f32; 3]) -> [f32; 3] {
+    let l = dot3(a, a).sqrt();
+    if l < 1e-12 {
+        a
+    } else {
+        mul3(a, 1.0 / l)
+    }
+}
+
+fn orthonormal_tangent(n: [f32; 3]) -> [f32; 3] {
+    let axis = if n[1].abs() < 0.9 {
+        [0.0, 1.0, 0.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
+    norm3(cross3(axis, n))
+}
+
+/// TBN from triangle positions + UVs (no TANGENT accessor). OpenGL, +Y = +V.
+pub fn tbn_from_positions_uvs(
+    p0: [f32; 3],
+    p1: [f32; 3],
+    p2: [f32; 3],
+    uv0: [f32; 2],
+    uv1: [f32; 2],
+    uv2: [f32; 2],
+    n: [f32; 3],
+) -> ([f32; 3], [f32; 3], [f32; 3]) {
+    let n = norm3(n);
+    let e1 = sub3(p1, p0);
+    let e2 = sub3(p2, p0);
+    let du1 = uv1[0] - uv0[0];
+    let dv1 = uv1[1] - uv0[1];
+    let du2 = uv2[0] - uv0[0];
+    let dv2 = uv2[1] - uv0[1];
+    let det = du1 * dv2 - du2 * dv1;
+    let (t_raw, b_raw) = if det.abs() < 1e-8 {
+        let t = orthonormal_tangent(n);
+        (t, cross3(n, t))
+    } else {
+        let inv = 1.0 / det;
+        let t = [
+            (e1[0] * dv2 - e2[0] * dv1) * inv,
+            (e1[1] * dv2 - e2[1] * dv1) * inv,
+            (e1[2] * dv2 - e2[2] * dv1) * inv,
+        ];
+        let b = [
+            (-e1[0] * du2 + e2[0] * du1) * inv,
+            (-e1[1] * du2 + e2[1] * du1) * inv,
+            (-e1[2] * du2 + e2[2] * du1) * inv,
+        ];
+        (t, b)
+    };
+    let t = norm3(sub3(t_raw, mul3(n, dot3(n, t_raw))));
+    let t = if dot3(t, t) < 1e-10 {
+        orthonormal_tangent(n)
+    } else {
+        t
+    };
+    let b_ortho = cross3(n, t);
+    let b = if dot3(b_ortho, b_raw) < 0.0 {
+        mul3(b_ortho, -1.0)
+    } else {
+        b_ortho
+    };
+    (t, norm3(b), n)
+}
+
+/// TBN from interpolated glTF TANGENT (xyz + handedness w).
+pub fn tbn_from_interpolated_tangent(
+    t0: [f32; 4],
+    t1: [f32; 4],
+    t2: [f32; 4],
+    bu: f32,
+    bv: f32,
+    n: [f32; 3],
+) -> ([f32; 3], [f32; 3], [f32; 3]) {
+    let n = norm3(n);
+    let w = 1.0 - bu - bv;
+    let t = norm3([
+        t0[0] * w + t1[0] * bu + t2[0] * bv,
+        t0[1] * w + t1[1] * bu + t2[1] * bv,
+        t0[2] * w + t1[2] * bu + t2[2] * bv,
+    ]);
+    let t = norm3(sub3(t, mul3(n, dot3(n, t))));
+    let handed = if (t0[3] * w + t1[3] * bu + t2[3] * bv) < 0.0 {
+        -1.0
+    } else {
+        1.0
+    };
+    let b = mul3(cross3(n, t), handed);
+    (t, b, n)
+}
+
+pub fn apply_tbn(t: [f32; 3], b: [f32; 3], n: [f32; 3], n_ts: [f32; 3]) -> [f32; 3] {
+    norm3(add3(add3(mul3(t, n_ts[0]), mul3(b, n_ts[1])), mul3(n, n_ts[2])))
 }
 
 pub fn resolve_mesh_path(path: &str, search_dirs: &[PathBuf]) -> Result<PathBuf, String> {
@@ -332,6 +540,7 @@ pub fn parse_obj(txt: &str) -> Result<TriangleMesh, String> {
         texcoords,
         tex_indices,
         gltf_material: None,
+        tangents: Vec::new(),
     })
 }
 
@@ -413,6 +622,7 @@ fn parse_gltf_json(
         .and_then(|v| v.as_u64())
         .ok_or_else(|| "primitive missing POSITION".to_string())? as usize;
     let uv_acc = attrs.get("TEXCOORD_0").and_then(|v| v.as_u64()).map(|v| v as usize);
+    let tan_acc = attrs.get("TANGENT").and_then(|v| v.as_u64()).map(|v| v as usize);
     let idx_acc = prim.get("indices").and_then(|v| v.as_u64()).map(|v| v as usize);
 
     let accessors = root
@@ -470,6 +680,16 @@ fn parse_gltf_json(
     } else {
         (planar_xz(&vertices), indices.clone())
     };
+    let tangents = if let Some(ai) = tan_acc {
+        let tans = read_vec4_accessor(accessors, views, &buffers, ai)?;
+        if tans.len() == vertices.len() {
+            tans
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
     let gltf_material = parse_primitive_material(&root, prim, base_dir, &buffers)?;
     Ok(TriangleMesh {
         vertices,
@@ -477,6 +697,7 @@ fn parse_gltf_json(
         texcoords,
         tex_indices,
         gltf_material,
+        tangents,
     })
 }
 
@@ -504,6 +725,9 @@ fn parse_primitive_material(
     let mut base_color_texture_bytes = None;
     let mut metallic_roughness_texture_path = None;
     let mut metallic_roughness_texture_bytes = None;
+    let mut normal_texture_path = None;
+    let mut normal_texture_bytes = None;
+    let mut normal_scale = 1.0f32;
     if let Some(pbr) = pbr {
         if let Some(arr) = pbr.get("baseColorFactor").and_then(|v| v.as_array()) {
             for (i, v) in arr.iter().take(4).enumerate() {
@@ -538,6 +762,18 @@ fn parse_primitive_material(
             metallic_roughness_texture_bytes = bytes;
         }
     }
+    if let Some(tex) = mat.get("normalTexture") {
+        let tex_i = tex
+            .get("index")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| "normalTexture missing index".to_string())? as usize;
+        let (path, bytes) = load_gltf_image(root, tex_i, base_dir, buffers)?;
+        normal_texture_path = path;
+        normal_texture_bytes = bytes;
+        if let Some(n) = tex.get("scale").and_then(|v| v.as_f64()) {
+            normal_scale = n as f32;
+        }
+    }
     Ok(Some(GltfPbrMaterial {
         base_color_factor,
         metallic_factor,
@@ -546,6 +782,9 @@ fn parse_primitive_material(
         base_color_texture_bytes,
         metallic_roughness_texture_path,
         metallic_roughness_texture_bytes,
+        normal_texture_path,
+        normal_texture_bytes,
+        normal_scale,
     }))
 }
 
@@ -779,6 +1018,36 @@ fn read_vec2_accessor(
         let u = f32::from_le_bytes(data[o..o + 4].try_into().unwrap());
         let v = f32::from_le_bytes(data[o + 4..o + 8].try_into().unwrap());
         out.push([u, v]);
+    }
+    Ok(out)
+}
+
+fn read_vec4_accessor(
+    accessors: &[serde_json::Value],
+    views: &[serde_json::Value],
+    buffers: &[Vec<u8>],
+    acc_index: usize,
+) -> Result<Vec<[f32; 4]>, String> {
+    let (acc, data, count, stride) = accessor_view(accessors, views, buffers, acc_index)?;
+    let ty = acc.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    let ctype = acc.get("componentType").and_then(|v| v.as_u64()).unwrap_or(0);
+    if ty != "VEC4" || ctype != 5126 {
+        return Err(format!(
+            "TANGENT must be FLOAT VEC4, got type={ty} componentType={ctype}"
+        ));
+    }
+    let step = if stride == 0 { 16 } else { stride };
+    let mut out = Vec::with_capacity(count);
+    for i in 0..count {
+        let o = i * step;
+        if o + 16 > data.len() {
+            return Err("TANGENT buffer underrun".into());
+        }
+        let x = f32::from_le_bytes(data[o..o + 4].try_into().unwrap());
+        let y = f32::from_le_bytes(data[o + 4..o + 8].try_into().unwrap());
+        let z = f32::from_le_bytes(data[o + 8..o + 12].try_into().unwrap());
+        let w = f32::from_le_bytes(data[o + 12..o + 16].try_into().unwrap());
+        out.push([x, y, z, w]);
     }
     Ok(out)
 }

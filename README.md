@@ -1,6 +1,6 @@
-# agent-rig (increments 1–13)
+# agent-rig (increments 1–14)
 
-Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture). Directional and point lights both cast shadow rays. No GPU. No Three.js in the engine.
+Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture and optional tangent-space normalTexture). Directional and point lights both cast shadow rays. No GPU. No Three.js in the engine.
 
 ## Increment 1
 
@@ -450,6 +450,37 @@ cd /workspace/agent-rig && ./scripts/increment13-threejs.sh
 
 Writes `artifacts/increment13/threejs-frame.png` (stock MeshStandardMaterial, same packed MR map on metalnessMap and roughnessMap, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450).
 
+## Increment 14
+
+Same courtyard as increment 13 (bowl + rock + metal ball + copper pillar with metallicRoughnessTexture, directional + shadowed point light). The pillar glTF now also has a high-contrast tangent-space `normalTexture` (brick / corrugation, OpenGL +Z up). Scene-JSON has no normal map; bump lighting comes from the file. TBN is built from a TANGENT accessor if present, otherwise from triangle positions + TEXCOORD_0. Single pose.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment14.sh
+```
+
+Writes:
+
+- `artifacts/increment14/scene.json` — authored increment-11 courtyard (no normal map in JSON)
+- `artifacts/increment14/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment14/frame.png` — our renderer, 800x450, post-step pose
+- `artifacts/increment14/threejs-frame.png` — stock Three.js, same pose (normalMap from the glTF, no IBL/tonemap)
+
+### CLI
+
+```bash
+agent-rig increment14 --out artifacts/increment14
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment14-threejs.sh
+```
+
+Writes `artifacts/increment14/threejs-frame.png` (stock MeshStandardMaterial, same glTF normalMap + MR maps, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450).
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
@@ -457,7 +488,7 @@ JSON object with `camera`, `lights`, and `bodies`.
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`
 - `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path)
-- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel.
+- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel. When `normalTexture` is present, RGB is unpacked to a tangent-space normal (2c−1) and TBN·n_ts replaces the geometric N for lighting (TANGENT accessor, or TBN derived from triangle positions + TEXCOORD_0). Scene JSON has no normal map.
 
 Gravity is `[0, -9.81, 0]`.
 
@@ -492,3 +523,5 @@ Increment 11: the point light casts a shadow ray (occluded if something sits bet
 Increment 12: same courtyard and lights; physics is stepped once; eight orbit cameras write `frame_00.png`…`frame_07.png` that are not copies of one still; the dump still records the pillar collider and a contact involving it; `increment12` writes scene + physics dump + the 8 PNGs.
 
 Increment 13: the glTF has `pbrMetallicRoughness.metallicRoughnessTexture`; the loaded mesh samples G/B (not the scene-JSON metallic 0 / roughness 0.85); after stepping there is a contact involving the glTF body and the dump records its collider type; `increment13` writes scene + physics dump + our PNG.
+
+Increment 14: the glTF has `normalTexture`; the loaded mesh shades with sampled tangent-space normals (TBN from TANGENT or from triangle + UV), not the geometric N alone; after stepping there is a contact involving the glTF body and the dump records its collider type; `increment14` writes scene + physics dump + our PNG.

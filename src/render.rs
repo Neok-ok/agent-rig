@@ -3,6 +3,7 @@
 use image::{Rgb, RgbImage};
 use std::path::Path;
 
+use crate::mesh::{apply_tbn, tbn_from_interpolated_tangent, tbn_from_positions_uvs};
 use crate::scene::{Light, Scene, Shape};
 
 pub const FRAME_WIDTH: u32 = 800;
@@ -141,6 +142,8 @@ struct Prim {
     metallic: f32,
     albedo_map: Option<AlbedoMap>,
     mr_map: Option<MrMap>,
+    normal_map: Option<NormalMap>,
+    normal_scale: f32,
 }
 
 struct AlbedoMap {
@@ -212,6 +215,78 @@ impl AlbedoMap {
         let x = x.rem_euclid(w) as u32;
         let y = y.rem_euclid(h) as u32;
         self.pixels[(y * self.width + x) as usize]
+    }
+}
+
+/// Linear tangent-space normal map. RGB unpacked as 2c-1 (OpenGL, +Z up).
+struct NormalMap {
+    width: u32,
+    height: u32,
+    pixels: Vec<V3>,
+}
+
+impl NormalMap {
+    fn load(path: &Path) -> Result<Self, String> {
+        let img = image::open(path)
+            .map_err(|e| format!("load normal {path:?}: {e}"))?
+            .to_rgb8();
+        Self::from_rgb8(img)
+    }
+
+    fn load_from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let img = image::load_from_memory(bytes)
+            .map_err(|e| format!("load normal bytes: {e}"))?
+            .to_rgb8();
+        Self::from_rgb8(img)
+    }
+
+    fn from_rgb8(img: image::RgbImage) -> Result<Self, String> {
+        let width = img.width();
+        let height = img.height();
+        let mut pixels = Vec::with_capacity((width * height) as usize);
+        for px in img.pixels() {
+            pixels.push(V3::new(
+                px[0] as f32 / 255.0,
+                px[1] as f32 / 255.0,
+                px[2] as f32 / 255.0,
+            ));
+        }
+        Ok(Self {
+            width,
+            height,
+            pixels,
+        })
+    }
+
+    fn sample(&self, u: f32, v: f32) -> V3 {
+        let w = self.width as f32;
+        let h = self.height as f32;
+        let u = u.rem_euclid(1.0);
+        let v = v.rem_euclid(1.0);
+        let x = u * w - 0.5;
+        let y = (1.0 - v) * h - 0.5;
+        let x0 = x.floor();
+        let y0 = y.floor();
+        let tx = x - x0;
+        let ty = y - y0;
+        let p00 = self.at(x0 as i32, y0 as i32);
+        let p10 = self.at(x0 as i32 + 1, y0 as i32);
+        let p01 = self.at(x0 as i32, y0 as i32 + 1);
+        let p11 = self.at(x0 as i32 + 1, y0 as i32 + 1);
+        lerp(lerp(p00, p10, tx), lerp(p01, p11, tx), ty)
+    }
+
+    fn at(&self, x: i32, y: i32) -> V3 {
+        let w = self.width as i32;
+        let h = self.height as i32;
+        let x = x.rem_euclid(w) as u32;
+        let y = y.rem_euclid(h) as u32;
+        self.pixels[(y * self.width + x) as usize]
+    }
+
+    fn sample_ts(&self, u: f32, v: f32, scale: f32) -> V3 {
+        let s = self.sample(u, v);
+        V3::new((2.0 * s.x - 1.0) * scale, (2.0 * s.y - 1.0) * scale, 2.0 * s.z - 1.0).norm()
     }
 }
 
@@ -297,6 +372,7 @@ enum PrimKind {
     Mesh {
         tris: Vec<[V3; 3]>,
         uvs: Vec<[[f32; 2]; 3]>,
+        tangents: Option<Vec<[[f32; 4]; 3]>>,
         aabb_min: V3,
         aabb_max: V3,
     },
@@ -323,6 +399,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         let mut roughness = b.material.roughness.clamp(0.04, 1.0);
         let mut metallic = b.material.metallic.clamp(0.0, 1.0);
         let mut mr_map = None;
+        let mut normal_map = None;
+        let mut normal_scale = 1.0f32;
         let mut albedo_map = b.material.albedo_map.as_ref().map(|p| {
             let resolved = scene
                 .resolve_texture(p)
@@ -364,11 +442,28 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
                             panic!("gltf metallicRoughnessTexture {tex_path:?}: {e}")
                         }));
                     }
+                    if let Some(bytes) = &gm.normal_texture_bytes {
+                        normal_map = Some(
+                            NormalMap::load_from_bytes(bytes)
+                                .unwrap_or_else(|e| panic!("gltf normalTexture: {e}")),
+                        );
+                        normal_scale = gm.normal_scale;
+                    } else if let Some(tex_path) = &gm.normal_texture_path {
+                        normal_map = Some(NormalMap::load(tex_path).unwrap_or_else(|e| {
+                            panic!("gltf normalTexture {tex_path:?}: {e}")
+                        }));
+                        normal_scale = gm.normal_scale;
+                    }
                 }
                 let rot = Quat::from_wxyz(b.rotation_wxyz);
                 let center = V3::from_arr(b.position);
                 let mut tris = Vec::with_capacity(mesh.indices.len());
                 let mut uvs = Vec::with_capacity(mesh.indices.len());
+                let mut tangents = if mesh.tangents.len() == mesh.vertices.len() {
+                    Some(Vec::with_capacity(mesh.indices.len()))
+                } else {
+                    None
+                };
                 let mut aabb_min = V3::new(f32::MAX, f32::MAX, f32::MAX);
                 let mut aabb_max = V3::new(f32::MIN, f32::MIN, f32::MIN);
                 for (tri_i, idx) in mesh.indices.iter().enumerate() {
@@ -395,10 +490,22 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
                     }
                     tris.push([a, c0, c1]);
                     uvs.push(mesh.triangle_uvs(tri_i));
+                    if let Some(tans) = tangents.as_mut() {
+                        let rot_tan = |tan: [f32; 4]| {
+                            let v = rot.rotate(V3::new(tan[0], tan[1], tan[2]));
+                            [v.x, v.y, v.z, tan[3]]
+                        };
+                        tans.push([
+                            rot_tan(mesh.tangents[idx[0] as usize]),
+                            rot_tan(mesh.tangents[idx[1] as usize]),
+                            rot_tan(mesh.tangents[idx[2] as usize]),
+                        ]);
+                    }
                 }
                 PrimKind::Mesh {
                     tris,
                     uvs,
+                    tangents,
                     aabb_min,
                     aabb_max,
                 }
@@ -413,6 +520,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             metallic,
             albedo_map,
             mr_map,
+            normal_map,
+            normal_scale,
         });
     }
 
@@ -513,9 +622,12 @@ fn intersect(orig: V3, dir: V3, p: &Prim, tmin: f32, tmax: f32) -> Option<Hit> {
         PrimKind::Mesh {
             tris,
             uvs,
+            tangents,
             aabb_min,
             aabb_max,
-        } => intersect_mesh(orig, dir, p, tris, uvs, *aabb_min, *aabb_max, tmin, tmax),
+        } => intersect_mesh(
+            orig, dir, p, tris, uvs, tangents.as_deref(), *aabb_min, *aabb_max, tmin, tmax,
+        ),
     }
 }
 
@@ -589,6 +701,7 @@ fn intersect_mesh(
     p: &Prim,
     tris: &[[V3; 3]],
     uvs: &[[[f32; 2]; 3]],
+    tangents: Option<&[[[f32; 4]; 3]]>,
     aabb_min: V3,
     aabb_max: V3,
     tmin: f32,
@@ -599,7 +712,7 @@ fn intersect_mesh(
     }
     let mut best_t = tmax;
     let mut best: Option<(f32, V3, V3, [f32; 2])> = None;
-    for ([v0, v1, v2], tuv) in tris.iter().zip(uvs.iter()) {
+    for (i, ([v0, v1, v2], tuv)) in tris.iter().zip(uvs.iter()).enumerate() {
         if let Some((t, n, bu, bv)) = intersect_triangle(orig, dir, *v0, *v1, *v2, tmin, best_t) {
             best_t = t;
             let w = 1.0 - bu - bv;
@@ -607,10 +720,44 @@ fn intersect_mesh(
                 tuv[0][0] * w + tuv[1][0] * bu + tuv[2][0] * bv,
                 tuv[0][1] * w + tuv[1][1] * bu + tuv[2][1] * bv,
             ];
+            let n = perturb_mesh_normal(n, uv, *v0, *v1, *v2, *tuv, bu, bv, tangents.and_then(|ts| ts.get(i)), p);
             best = Some((t, orig.add(dir.mul(t)), n, uv));
         }
     }
     best.map(|(t, pnt, n, uv)| hit_uv(t, pnt, n, p, Some(uv)))
+}
+
+fn v3_to_arr(v: V3) -> [f32; 3] {
+    [v.x, v.y, v.z]
+}
+
+fn arr_to_v3(a: [f32; 3]) -> V3 {
+    V3::new(a[0], a[1], a[2])
+}
+
+fn perturb_mesh_normal(
+    geom_n: V3,
+    uv: [f32; 2],
+    v0: V3,
+    v1: V3,
+    v2: V3,
+    tuv: [[f32; 2]; 3],
+    bu: f32,
+    bv: f32,
+    tangents: Option<&[[f32; 4]; 3]>,
+    p: &Prim,
+) -> V3 {
+    let Some(nmap) = &p.normal_map else {
+        return geom_n;
+    };
+    let n_ts = nmap.sample_ts(uv[0], uv[1], p.normal_scale);
+    let n = v3_to_arr(geom_n);
+    let (t, b, n) = if let Some(ts) = tangents {
+        tbn_from_interpolated_tangent(ts[0], ts[1], ts[2], bu, bv, n)
+    } else {
+        tbn_from_positions_uvs(v3_to_arr(v0), v3_to_arr(v1), v3_to_arr(v2), tuv[0], tuv[1], tuv[2], n)
+    };
+    arr_to_v3(apply_tbn(t, b, n, [n_ts.x, n_ts.y, n_ts.z]))
 }
 
 fn intersect_sphere(orig: V3, dir: V3, p: &Prim, radius: f32, tmin: f32, tmax: f32) -> Option<Hit> {
