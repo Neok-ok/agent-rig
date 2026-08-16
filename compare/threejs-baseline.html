@@ -69,6 +69,16 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setSize(WIDTH, HEIGHT, true);
 renderer.setPixelRatio(1);
 renderer.toneMapping = THREE.NoToneMapping;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 20;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -6;
+sun.shadow.camera.right = sun.shadow.camera.top = 6;
+ground.receiveShadow = true;
+ball.castShadow = true;
 document.body.appendChild(renderer.domElement);
 
 renderer.render(scene, camera);

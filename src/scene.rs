@@ -91,3 +91,48 @@ pub fn parse_scene(json: &str) -> Result<Scene, String> {
 pub fn demo_scene() -> Scene {
     parse_scene(DEMO_SCENE_JSON).expect("demo scene JSON is valid")
 }
+
+pub const INCREMENT2_SCENE_JSON: &str = r#"{
+  "camera": { "position": [5.2, 2.8, 6.0], "look_at": [0.2, 0.4, 0.0], "fov_y_deg": 40 },
+  "lights": [{ "type": "directional", "direction": [-0.45, -1.0, -0.35], "color": [1.0, 0.97, 0.92], "intensity": 3.0 }],
+  "bodies": [
+    {
+      "id": "ground",
+      "shape": { "type": "box", "size": [10, 0.2, 10] },
+      "position": [0, -0.1, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "material": { "albedo": [0.35, 0.36, 0.38], "roughness": 0.8, "metallic": 0.0 }
+    },
+    {
+      "id": "ball",
+      "shape": { "type": "sphere", "radius": 0.35 },
+      "position": [-1.6, 0.9, 0],
+      "mass": 1.0,
+      "linear_velocity": [4.5, 0, 0],
+      "material": { "albedo": [0.92, 0.78, 0.45], "roughness": 0.15, "metallic": 0.9 }
+    },
+    {
+      "id": "crate",
+      "shape": { "type": "box", "size": [0.7, 0.7, 0.7] },
+      "position": [0.4, 0.35, 0],
+      "mass": 1.0,
+      "material": { "albedo": [0.22, 0.38, 0.28], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "stopper",
+      "shape": { "type": "box", "size": [0.4, 0.6, 0.4] },
+      "position": [1.6, 0.3, 0],
+      "mass": 0,
+      "material": { "albedo": [0.7, 0.72, 0.75], "roughness": 0.2, "metallic": 0.85 }
+    }
+  ]
+}"#;
+
+pub fn increment2_scene_json() -> &'static str {
+    INCREMENT2_SCENE_JSON
+}
+
+pub fn increment2_scene() -> Scene {
+    parse_scene(INCREMENT2_SCENE_JSON).expect("increment2 scene JSON is valid")
+}

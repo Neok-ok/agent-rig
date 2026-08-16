@@ -11,7 +11,7 @@ pub const FRAME_HEIGHT: u32 = 450;
 const AA: u32 = 2;
 const EPS: f32 = 1e-3;
 const PI: f32 = std::f32::consts::PI;
-const EXPOSURE: f32 = 0.82;
+const EXPOSURE: f32 = 0.74;
 const SH_SAMPLES: u32 = 96;
 
 #[derive(Clone, Copy)]
@@ -342,8 +342,12 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
 
     let ao = contact_ao(h.p, n, prims);
 
-    // Diffuse irradiance from the procedural sky (SH, cosine-convolved, already E/π).
-    let irradiance = sh_irradiance(env, n);
+    // Diffuse IBL: SH fill + explicit sky/ground by N.y so the ball Y-gradient stays readable.
+    let ir_sh = sh_irradiance(env, n);
+    let hemi_t = (n.y.clamp(-1.0, 1.0) * 0.5 + 0.5).powf(1.25);
+    let sky_irr = env_radiance(V3::new(0.0, 1.0, 0.0)).mul(0.62);
+    let gnd_irr = env_radiance(V3::new(0.0, -1.0, 0.0)).mul(0.38);
+    let irradiance = ir_sh.mul(0.18).add(lerp(gnd_irr, sky_irr, hemi_t));
     let f_diff = fresnel_schlick(n_dot_v, f0);
     let k_d = V3::new(1.0 - f_diff.x, 1.0 - f_diff.y, 1.0 - f_diff.z).mul(1.0 - h.metallic);
     let diffuse_ibl = k_d.hadamard(h.albedo).hadamard(irradiance).mul(ao);
@@ -353,7 +357,11 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
     let spec_env = env_specular(r, n, h.roughness);
     let spec_brdf = env_brdf(n_dot_v, h.roughness, f0);
     let spec_ao = 0.25 + 0.75 * ao;
-    let specular_ibl = spec_env.hadamard(spec_brdf).mul(spec_ao);
+    // Stronger split-sum + a little raw env sheen so horizon/sky actually paints on terracotta.
+    let specular_ibl = spec_env
+        .hadamard(spec_brdf)
+        .mul(spec_ao * 4.4)
+        .add(spec_env.mul(0.10 * spec_ao));
 
     let mut color = diffuse_ibl.add(specular_ibl);
 
@@ -373,7 +381,8 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
         if closest_hit(shadow_orig, l, prims, EPS, f32::MAX).is_some() {
             continue;
         }
-        let radiance = V3::from_arr(*lcol).mul(*intensity);
+        // Keep the sun, but do not let intensity 3 nuke the IBL Y-gradient.
+        let radiance = V3::from_arr(*lcol).mul(*intensity * 0.58);
         color = color.add(cook_torrance(
             h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
         ));
@@ -446,26 +455,27 @@ fn ao_ray(orig: V3, dir: V3, prims: &[Prim], max_dist: f32) -> f32 {
 fn env_radiance(dir: V3) -> V3 {
     let d = dir.norm();
     let y = d.y;
-    let ground = V3::new(0.050, 0.046, 0.042);
-    let horizon = V3::new(0.58, 0.66, 0.80);
-    let zenith = V3::new(0.10, 0.20, 0.48);
+    // High-contrast: saturated cool sky vs dark ground (readable Y-gradient on a small ball).
+    let ground = V3::new(0.016, 0.014, 0.012);
+    let horizon = V3::new(0.72, 0.92, 1.35);
+    let zenith = V3::new(0.14, 0.38, 1.95);
 
     let base = if y <= 0.0 {
-        let t = (-y).clamp(0.0, 1.0).powf(0.35);
+        // Ground takes over quickly so the lower hemisphere is not a second sky.
+        let t = (-y).clamp(0.0, 1.0).powf(0.22);
         lerp(horizon, ground, t)
     } else {
-        // Blue takes over quickly above the horizon so the frame reads as sky, not white.
-        let t = y.clamp(0.0, 1.0).powf(0.45);
+        let t = y.clamp(0.0, 1.0).powf(0.40);
         lerp(horizon, zenith, t)
     };
 
-    // Thin bright horizon (glossy reflections + backdrop), not a white hemisphere.
-    let hz = (-y * y * 18.0).exp();
-    let glow = V3::new(0.95, 0.88, 0.78).mul(0.28 * hz);
+    // Bright thin horizon — the glossy env cue on terracotta.
+    let hz = (-y * y * 14.0).exp();
+    let glow = V3::new(1.55, 1.35, 1.05).mul(0.55 * hz);
 
     let sun = V3::new(0.45, 1.0, 0.35).norm();
     let m = d.dot(sun).max(0.0);
-    let aureole = m.powf(80.0) * 1.6 + m.powf(16.0) * 0.12;
+    let aureole = m.powf(56.0) * 2.8 + m.powf(10.0) * 0.28;
     base.add(glow).add(V3::new(1.0, 0.88, 0.68).mul(aureole))
 }
 
@@ -514,25 +524,28 @@ fn sh_irradiance(env: &EnvSh, n: V3) -> V3 {
     for k in 0..9 {
         e = e.add(env.c[k].mul(ylm[k] * a[k]));
     }
-    V3::new(e.x.max(0.0), e.y.max(0.0), e.z.max(0.0)).mul(0.85)
+    V3::new(e.x.max(0.0), e.y.max(0.0), e.z.max(0.0)).mul(1.05)
 }
 
-/// Roughness-blurred environment sample (cone opens toward N; blends to horizon/zenith).
-fn env_specular(r: V3, n: V3, roughness: f32) -> V3 {
-    let a = (roughness * roughness).clamp(0.0, 1.0);
-    let dir = r.mul((1.0 - a).max(1e-4)).add(n.mul(a)).norm();
-    let sharp = env_radiance(dir);
-    let horiz = {
-        let h = V3::new(dir.x, 0.0, dir.z);
-        if h.len() < 1e-6 {
-            env_radiance(V3::new(1.0, 0.0, 0.0))
-        } else {
-            env_radiance(h.norm())
-        }
+/// Roughness cone around R (4 env taps). No mid-mip wash — keep horizon/sky readable.
+fn env_specular(r: V3, _n: V3, roughness: f32) -> V3 {
+    let a = roughness.clamp(0.04, 1.0);
+    // Tight cone at r=0.35 so we do not average toward a gray mid color.
+    let cone = a * 0.22;
+    let r = r.norm();
+    let up = if r.y.abs() < 0.9 {
+        V3::new(0.0, 1.0, 0.0)
+    } else {
+        V3::new(1.0, 0.0, 0.0)
     };
-    let zenith = env_radiance(V3::new(0.0, 1.0, 0.0));
-    let mip = lerp(horiz, zenith, 0.35);
-    lerp(sharp, mip, a)
+    let t = r.cross(up).norm();
+    let b = t.cross(r).norm();
+    let ring = cone.max(1e-4);
+    let mut acc = env_radiance(r);
+    acc = acc.add(env_radiance(r.add(t.mul(ring)).norm()));
+    acc = acc.add(env_radiance(r.add(t.mul(-0.5 * ring)).add(b.mul(0.866 * ring)).norm()));
+    acc = acc.add(env_radiance(r.add(t.mul(-0.5 * ring)).add(b.mul(-0.866 * ring)).norm()));
+    acc.mul(0.25)
 }
 
 /// UE4 split-sum envBRDF fit (Karis).

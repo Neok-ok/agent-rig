@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>threejs-from-scene</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 800px;
+      height: 450px;
+      overflow: hidden;
+      background: #000;
+    }
+    canvas, img {
+      display: block;
+      width: 800px;
+      height: 450px;
+    }
+  </style>
+</head>
+<body>
+<script type="module">
+import * as THREE from './three.module.min.js';
+
+const WIDTH = 800;
+const HEIGHT = 450;
+const params = new URLSearchParams(location.search);
+const sceneUrl = params.get('scene') || '/artifacts/increment2/scene.json';
+const physicsUrl = params.get('physics') || '/artifacts/increment2/physics.json';
+
+const spec = await (await fetch(sceneUrl)).json();
+let poses = {};
+try {
+  const phys = await (await fetch(physicsUrl)).json();
+  for (const b of phys.bodies || []) poses[b.id] = b;
+} catch (e) {
+  // render authored poses if physics is missing
+}
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xc5cad0);
+
+const camera = new THREE.PerspectiveCamera(spec.camera.fov_y_deg, WIDTH / HEIGHT, 0.1, 100);
+camera.position.fromArray(spec.camera.position);
+camera.lookAt(...spec.camera.look_at);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  preserveDrawingBuffer: true,
+  alpha: false,
+});
+renderer.setSize(WIDTH, HEIGHT, true);
+renderer.setPixelRatio(1);
+renderer.toneMapping = THREE.NoToneMapping;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+for (const light of spec.lights) {
+  if (light.type !== 'directional') continue;
+  const sun = new THREE.DirectionalLight(0xffffff, light.intensity);
+  sun.color.setRGB(...light.color);
+  sun.position.set(-light.direction[0], -light.direction[1], -light.direction[2]);
+  sun.target.position.set(0, 0, 0);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = 30;
+  sun.shadow.camera.left = sun.shadow.camera.bottom = -8;
+  sun.shadow.camera.right = sun.shadow.camera.top = 8;
+  scene.add(sun);
+  scene.add(sun.target);
+}
+
+for (const body of spec.bodies) {
+  const pose = poses[body.id];
+  const position = pose ? pose.position : body.position;
+  const rotation = pose && pose.rotation_wxyz ? pose.rotation_wxyz : (body.rotation_wxyz || [1, 0, 0, 0]);
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(...body.material.albedo),
+    roughness: body.material.roughness,
+    metalness: body.material.metallic,
+  });
+  let geom;
+  if (body.shape.type === 'box') {
+    geom = new THREE.BoxGeometry(...body.shape.size);
+  } else if (body.shape.type === 'sphere') {
+    geom = new THREE.SphereGeometry(body.shape.radius, 48, 32);
+  } else {
+    continue;
+  }
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.position.fromArray(position);
+  mesh.quaternion.set(rotation[1], rotation[2], rotation[3], rotation[0]);
+  mesh.castShadow = body.id !== 'ground';
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+}
+
+document.body.appendChild(renderer.domElement);
+renderer.render(scene, camera);
+
+const dataUrl = renderer.domElement.toDataURL('image/png');
+const img = document.createElement('img');
+img.width = WIDTH;
+img.height = HEIGHT;
+img.onload = () => { document.title = 'ready'; };
+img.src = dataUrl;
+document.body.innerHTML = '';
+document.body.appendChild(img);
+</script>
+</body>
+</html>

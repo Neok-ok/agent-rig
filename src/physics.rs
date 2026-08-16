@@ -50,22 +50,30 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
             RigidBodyBuilder::dynamic()
                 .position(iso)
                 .linvel(vector![vx, vy, vz])
-                .additional_mass(body.mass)
                 .build()
         };
         let handle = rigid_body_set.insert(rb);
 
+        // Density from authored mass so inertia is non-zero (needed for body-body hits).
         let collider = match body.shape {
-            Shape::Box { size } => ColliderBuilder::cuboid(size[0] * 0.5, size[1] * 0.5, size[2] * 0.5)
-                .friction(0.8)
-                .restitution(0.05)
-                .density(0.0)
-                .build(),
-            Shape::Sphere { radius } => ColliderBuilder::ball(radius)
-                .friction(0.6)
-                .restitution(0.05)
-                .density(0.0)
-                .build(),
+            Shape::Box { size } => {
+                let mut b = ColliderBuilder::cuboid(size[0] * 0.5, size[1] * 0.5, size[2] * 0.5)
+                    .friction(0.35)
+                    .restitution(0.05);
+                if body.mass > 0.0 {
+                    let vol = (size[0] * size[1] * size[2]).max(1e-8);
+                    b = b.density(body.mass / vol);
+                }
+                b.build()
+            }
+            Shape::Sphere { radius } => {
+                let mut b = ColliderBuilder::ball(radius).friction(0.25).restitution(0.05);
+                if body.mass > 0.0 {
+                    let vol = (4.0 / 3.0 * std::f32::consts::PI * radius * radius * radius).max(1e-8);
+                    b = b.density(body.mass / vol);
+                }
+                b.build()
+            }
         };
         let ch = collider_set.insert_with_parent(collider, handle, &mut rigid_body_set);
         body_handles.insert(body.id.clone(), handle);
