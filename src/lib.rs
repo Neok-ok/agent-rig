@@ -1,4 +1,4 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–9).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–10).
 
 mod mesh;
 mod physics;
@@ -11,7 +11,7 @@ pub use mesh::{load_gltf, load_mesh, load_obj, parse_obj, GltfPbrMaterial, Trian
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
     increment3_scene_json, increment4_scene, increment4_scene_json, increment5_scene,
-    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, parse_scene, Body, Camera,
+    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, parse_scene, Body, Camera,
     Light, Material, MeshCollider, Scene, Shape,
 };
 
@@ -29,6 +29,7 @@ pub const INCREMENT6_STEPS: u32 = 100;
 pub const INCREMENT7_STEPS: u32 = 100;
 pub const INCREMENT8_STEPS: u32 = 100;
 pub const INCREMENT9_STEPS: u32 = 100;
+pub const INCREMENT10_STEPS: u32 = 100;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -75,6 +76,11 @@ pub fn run_increment8(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u
 /// Increment 9: same courtyard; pillar look from glTF pbrMetallicRoughness.
 pub fn run_increment9(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
     write_step_render(out_dir, &increment9_scene(), steps, dt, width, height)
+}
+
+/// Increment 10: increment-9 courtyard plus a local point light.
+pub fn run_increment10(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
+    write_step_render(out_dir, &increment10_scene(), steps, dt, width, height)
 }
 
 fn write_step_render(

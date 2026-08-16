@@ -1,4 +1,4 @@
-# agent-rig (increments 1–9)
+# agent-rig (increments 1–10)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness). No GPU. No Three.js in the engine.
 
@@ -315,12 +315,47 @@ cd /workspace/agent-rig && ./scripts/increment9-threejs.sh
 
 Writes `artifacts/increment9/threejs-frame.png` (stock MeshStandardMaterial using the glTF `baseColorFactor` / map, ambient 0.25 + directional, shadows on, no env map, no tonemap, 800x450).
 
+## Increment 10
+
+Same courtyard as increment 9 (bowl + rock + metal ball + copper pillar). Adds one warm point light beside the pillar; the directional stays. Our Cook-Torrance path adds the point light with inverse-square falloff so the pillar and nearby floor read a local highlight the sun alone would not make. IBL is unchanged.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment10.sh
+```
+
+Writes:
+
+- `artifacts/increment10/scene.json` — authored scene (increment-9 set + point light)
+- `artifacts/increment10/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment10/frame.png` — our renderer, 800x450, post-step poses (IBL + directional + point)
+- `artifacts/increment10/threejs-frame.png` — stock Three.js, same poses (PointLight + directional, no IBL/tonemap)
+
+### CLI
+
+```bash
+agent-rig increment10 --out artifacts/increment10
+agent-rig sim artifacts/increment10/scene.json --out artifacts/increment10-sim
+agent-rig render artifacts/increment10/scene.json --physics artifacts/increment10/physics.json --out artifacts/increment10/frame.png
+```
+
+`sim` / `render` load the point light via the shared scene loader.
+
+### Three.js baseline (same post-step poses)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment10-threejs.sh
+```
+
+Writes `artifacts/increment10/threejs-frame.png` (stock MeshStandardMaterial, ambient 0.25 + directional + PointLight at the scene position, shadows on the directional, no env map, no tonemap, 800x450).
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
 
 - `camera`: `position`, `look_at`, `fov_y_deg`
-- `lights`: `type: "directional"` with `direction`, `color`, `intensity`
+- `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`
 - `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path)
 - mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors), that drives the look; scene JSON `material` is the fallback when the glTF has no material.
 
@@ -349,3 +384,5 @@ Increment 7: the environment / ground body is a triangle mesh (not a box); after
 Increment 8: a glTF/GLB file loads (vertex/triangle counts > 0); the scene has a mesh body whose path ends in `.gltf` or `.glb`; after stepping there is a contact involving that body and the dump records its collider type; `increment8` writes scene + physics dump + our PNG.
 
 Increment 9: the glTF has `pbrMetallicRoughness.baseColorFactor` (and/or `baseColorTexture`); the loaded mesh uses that factor, not only the scene-JSON albedo (JSON is a dull-gray fallback); after stepping there is a contact involving the glTF body and the dump records its collider type; `increment9` writes scene + physics dump + our PNG.
+
+Increment 10: the scene has a point light (`position`, `color`, `intensity`) plus the existing directional; `sim` / `render` load it; after stepping the glTF pillar still has a collider type and a contact in the dump; `increment10` writes scene + physics dump + our PNG (local highlight / falloff the directional alone would not make).

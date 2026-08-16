@@ -628,26 +628,48 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
     let mut color = diffuse_ibl.add(specular_ibl);
 
     for light in lights {
-        let Light::Directional {
-            direction,
-            color: lcol,
-            intensity,
-        } = light;
-        let ldir = V3::from_arr(*direction).norm();
-        let l = ldir.mul(-1.0);
-        let n_dot_l = n.dot(l).max(0.0);
-        if n_dot_l <= 0.0 {
-            continue;
+        match light {
+            Light::Directional {
+                direction,
+                color: lcol,
+                intensity,
+            } => {
+                let ldir = V3::from_arr(*direction).norm();
+                let l = ldir.mul(-1.0);
+                let n_dot_l = n.dot(l).max(0.0);
+                if n_dot_l <= 0.0 {
+                    continue;
+                }
+                let shadow_orig = h.p.add(n.mul(EPS * 4.0));
+                if closest_hit(shadow_orig, l, prims, EPS, f32::MAX).is_some() {
+                    continue;
+                }
+                // Keep the sun, but do not let intensity 3 nuke the IBL Y-gradient.
+                let radiance = V3::from_arr(*lcol).mul(*intensity * 0.58);
+                color = color.add(cook_torrance(
+                    h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
+                ));
+            }
+            Light::Point {
+                position,
+                color: lcol,
+                intensity,
+            } => {
+                let to_l = V3::from_arr(*position).sub(h.p);
+                let dist = to_l.len().max(1e-3);
+                let l = to_l.mul(1.0 / dist);
+                let n_dot_l = n.dot(l).max(0.0);
+                if n_dot_l <= 0.0 {
+                    continue;
+                }
+                // Inverse-square falloff; no point-light shadows (directional keeps its rays).
+                let atten = 1.0 / (dist * dist);
+                let radiance = V3::from_arr(*lcol).mul(*intensity * atten);
+                color = color.add(cook_torrance(
+                    h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
+                ));
+            }
         }
-        let shadow_orig = h.p.add(n.mul(EPS * 4.0));
-        if closest_hit(shadow_orig, l, prims, EPS, f32::MAX).is_some() {
-            continue;
-        }
-        // Keep the sun, but do not let intensity 3 nuke the IBL Y-gradient.
-        let radiance = V3::from_arr(*lcol).mul(*intensity * 0.58);
-        color = color.add(cook_torrance(
-            h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
-        ));
     }
     color
 }

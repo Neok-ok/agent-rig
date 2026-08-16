@@ -76,19 +76,25 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 for (const light of spec.lights) {
-  if (light.type !== 'directional') continue;
-  const sun = new THREE.DirectionalLight(0xffffff, light.intensity);
-  sun.color.setRGB(...light.color);
-  sun.position.set(-light.direction[0], -light.direction[1], -light.direction[2]);
-  sun.target.position.set(0, 0, 0);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.near = 0.5;
-  sun.shadow.camera.far = 30;
-  sun.shadow.camera.left = sun.shadow.camera.bottom = -8;
-  sun.shadow.camera.right = sun.shadow.camera.top = 8;
-  scene.add(sun);
-  scene.add(sun.target);
+  if (light.type === 'directional') {
+    const sun = new THREE.DirectionalLight(0xffffff, light.intensity);
+    sun.color.setRGB(...light.color);
+    sun.position.set(-light.direction[0], -light.direction[1], -light.direction[2]);
+    sun.target.position.set(0, 0, 0);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 30;
+    sun.shadow.camera.left = sun.shadow.camera.bottom = -8;
+    sun.shadow.camera.right = sun.shadow.camera.top = 8;
+    scene.add(sun);
+    scene.add(sun.target);
+  } else if (light.type === 'point') {
+    const pl = new THREE.PointLight(0xffffff, light.intensity);
+    pl.color.setRGB(...light.color);
+    pl.position.fromArray(light.position);
+    scene.add(pl);
+  }
 }
 
 function readAccessor(gltf, bin, accIndex) {
