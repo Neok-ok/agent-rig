@@ -140,6 +140,7 @@ struct Prim {
     roughness: f32,
     metallic: f32,
     albedo_map: Option<AlbedoMap>,
+    mr_map: Option<MrMap>,
 }
 
 struct AlbedoMap {
@@ -214,6 +215,73 @@ impl AlbedoMap {
     }
 }
 
+/// Linear (non-sRGB) metallic-roughness map. glTF: G=roughness, B=metallic.
+struct MrMap {
+    width: u32,
+    height: u32,
+    pixels: Vec<V3>,
+}
+
+impl MrMap {
+    fn load(path: &Path) -> Result<Self, String> {
+        let img = image::open(path)
+            .map_err(|e| format!("load mr {path:?}: {e}"))?
+            .to_rgb8();
+        Self::from_rgb8(img)
+    }
+
+    fn load_from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let img = image::load_from_memory(bytes)
+            .map_err(|e| format!("load mr bytes: {e}"))?
+            .to_rgb8();
+        Self::from_rgb8(img)
+    }
+
+    fn from_rgb8(img: image::RgbImage) -> Result<Self, String> {
+        let width = img.width();
+        let height = img.height();
+        let mut pixels = Vec::with_capacity((width * height) as usize);
+        for px in img.pixels() {
+            pixels.push(V3::new(
+                px[0] as f32 / 255.0,
+                px[1] as f32 / 255.0,
+                px[2] as f32 / 255.0,
+            ));
+        }
+        Ok(Self {
+            width,
+            height,
+            pixels,
+        })
+    }
+
+    fn sample(&self, u: f32, v: f32) -> V3 {
+        let w = self.width as f32;
+        let h = self.height as f32;
+        let u = u.rem_euclid(1.0);
+        let v = v.rem_euclid(1.0);
+        let x = u * w - 0.5;
+        let y = (1.0 - v) * h - 0.5;
+        let x0 = x.floor();
+        let y0 = y.floor();
+        let tx = x - x0;
+        let ty = y - y0;
+        let p00 = self.at(x0 as i32, y0 as i32);
+        let p10 = self.at(x0 as i32 + 1, y0 as i32);
+        let p01 = self.at(x0 as i32, y0 as i32 + 1);
+        let p11 = self.at(x0 as i32 + 1, y0 as i32 + 1);
+        lerp(lerp(p00, p10, tx), lerp(p01, p11, tx), ty)
+    }
+
+    fn at(&self, x: i32, y: i32) -> V3 {
+        let w = self.width as i32;
+        let h = self.height as i32;
+        let x = x.rem_euclid(w) as u32;
+        let y = y.rem_euclid(h) as u32;
+        self.pixels[(y * self.width + x) as usize]
+    }
+}
+
 fn srgb_u8_to_linear(c: u8) -> f32 {
     let x = c as f32 / 255.0;
     if x <= 0.04045 {
@@ -254,6 +322,7 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         let mut albedo = V3::from_arr(b.material.albedo);
         let mut roughness = b.material.roughness.clamp(0.04, 1.0);
         let mut metallic = b.material.metallic.clamp(0.0, 1.0);
+        let mut mr_map = None;
         let mut albedo_map = b.material.albedo_map.as_ref().map(|p| {
             let resolved = scene
                 .resolve_texture(p)
@@ -284,6 +353,16 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
                             .unwrap_or_else(|e| panic!("gltf baseColorTexture {tex_path:?}: {e}"));
                         map.mul_factor(albedo);
                         albedo_map = Some(map);
+                    }
+                    if let Some(bytes) = &gm.metallic_roughness_texture_bytes {
+                        mr_map = Some(
+                            MrMap::load_from_bytes(bytes)
+                                .unwrap_or_else(|e| panic!("gltf metallicRoughnessTexture: {e}")),
+                        );
+                    } else if let Some(tex_path) = &gm.metallic_roughness_texture_path {
+                        mr_map = Some(MrMap::load(tex_path).unwrap_or_else(|e| {
+                            panic!("gltf metallicRoughnessTexture {tex_path:?}: {e}")
+                        }));
                     }
                 }
                 let rot = Quat::from_wxyz(b.rotation_wxyz);
@@ -333,6 +412,7 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             roughness,
             metallic,
             albedo_map,
+            mr_map,
         });
     }
 
@@ -609,13 +689,23 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         (Some(map), Some([u, v])) => map.sample(u, v),
         _ => prim.albedo,
     };
+    let (metallic, roughness) = match (&prim.mr_map, uv) {
+        (Some(map), Some([u, v])) => {
+            let s = map.sample(u, v);
+            // glTF: roughness = G * roughnessFactor, metallic = B * metallicFactor.
+            let roughness = (s.y * prim.roughness).clamp(0.04, 1.0);
+            let metallic = (s.z * prim.metallic).clamp(0.0, 1.0);
+            (metallic, roughness)
+        }
+        _ => (prim.metallic, prim.roughness),
+    };
     Hit {
         t,
         p: pnt,
         n,
         albedo,
-        roughness: prim.roughness,
-        metallic: prim.metallic,
+        roughness,
+        metallic,
     }
 }
 

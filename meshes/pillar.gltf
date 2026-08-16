@@ -1,7 +1,7 @@
 {
   "asset": {
     "version": "2.0",
-    "generator": "agent-rig increment9"
+    "generator": "agent-rig increment13"
   },
   "scene": 0,
   "scenes": [
@@ -38,9 +38,23 @@
       "name": "pillar_copper",
       "pbrMetallicRoughness": {
         "baseColorFactor": [0.85, 0.45, 0.18, 1.0],
-        "metallicFactor": 0.85,
-        "roughnessFactor": 0.25
+        "metallicFactor": 1.0,
+        "roughnessFactor": 1.0,
+        "metallicRoughnessTexture": {
+          "index": 0
+        }
       }
+    }
+  ],
+  "textures": [
+    {
+      "source": 0
+    }
+  ],
+  "images": [
+    {
+      "uri": "../textures/pillar-mr.png",
+      "mimeType": "image/png"
     }
   ],
   "accessors": [

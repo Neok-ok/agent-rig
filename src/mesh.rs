@@ -12,6 +12,10 @@ pub struct GltfPbrMaterial {
     pub base_color_texture_path: Option<PathBuf>,
     /// Embedded image bytes (data URI or bufferView).
     pub base_color_texture_bytes: Option<Vec<u8>>,
+    /// Sidecar metallic-roughness map (glTF: G=roughness, B=metallic).
+    pub metallic_roughness_texture_path: Option<PathBuf>,
+    /// Embedded metallic-roughness map bytes.
+    pub metallic_roughness_texture_bytes: Option<Vec<u8>>,
 }
 
 impl GltfPbrMaterial {
@@ -26,6 +30,70 @@ impl GltfPbrMaterial {
     pub fn has_base_color_texture(&self) -> bool {
         self.base_color_texture_path.is_some() || self.base_color_texture_bytes.is_some()
     }
+
+    pub fn has_metallic_roughness_texture(&self) -> bool {
+        self.metallic_roughness_texture_path.is_some()
+            || self.metallic_roughness_texture_bytes.is_some()
+    }
+
+    /// Sample (metallic, roughness). Texture B/G win over scene-JSON constants;
+    /// glTF metallicFactor / roughnessFactor multiply the texel (1.0 = texture is the look).
+    pub fn sample_metallic_roughness(&self, u: f32, v: f32) -> Result<(f32, f32), String> {
+        if !self.has_metallic_roughness_texture() {
+            return Ok((self.metallic_factor, self.roughness_factor));
+        }
+        let img = if let Some(bytes) = &self.metallic_roughness_texture_bytes {
+            image::load_from_memory(bytes)
+                .map_err(|e| format!("load mr bytes: {e}"))?
+                .to_rgb8()
+        } else if let Some(path) = &self.metallic_roughness_texture_path {
+            image::open(path)
+                .map_err(|e| format!("load mr {path:?}: {e}"))?
+                .to_rgb8()
+        } else {
+            return Ok((self.metallic_factor, self.roughness_factor));
+        };
+        let (r, g, b) = sample_linear_rgb(&img, u, v);
+        let _ = r;
+        let roughness = (g * self.roughness_factor).clamp(0.0, 1.0);
+        let metallic = (b * self.metallic_factor).clamp(0.0, 1.0);
+        Ok((metallic, roughness))
+    }
+}
+
+fn sample_linear_rgb(img: &image::RgbImage, u: f32, v: f32) -> (f32, f32, f32) {
+    let w = img.width() as f32;
+    let h = img.height() as f32;
+    let u = u.rem_euclid(1.0);
+    let v = v.rem_euclid(1.0);
+    let x = u * w - 0.5;
+    let y = (1.0 - v) * h - 0.5;
+    let x0 = x.floor();
+    let y0 = y.floor();
+    let tx = x - x0;
+    let ty = y - y0;
+    let p00 = linear_at(img, x0 as i32, y0 as i32);
+    let p10 = linear_at(img, x0 as i32 + 1, y0 as i32);
+    let p01 = linear_at(img, x0 as i32, y0 as i32 + 1);
+    let p11 = linear_at(img, x0 as i32 + 1, y0 as i32 + 1);
+    let lerp = |a: [f32; 3], b: [f32; 3], t: f32| {
+        [
+            a[0] * (1.0 - t) + b[0] * t,
+            a[1] * (1.0 - t) + b[1] * t,
+            a[2] * (1.0 - t) + b[2] * t,
+        ]
+    };
+    let a = lerp(lerp(p00, p10, tx), lerp(p01, p11, tx), ty);
+    (a[0], a[1], a[2])
+}
+
+fn linear_at(img: &image::RgbImage, x: i32, y: i32) -> [f32; 3] {
+    let w = img.width() as i32;
+    let h = img.height() as i32;
+    let x = x.rem_euclid(w) as u32;
+    let y = y.rem_euclid(h) as u32;
+    let p = img.get_pixel(x, y);
+    [p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0]
 }
 
 #[derive(Debug, Clone)]
@@ -434,6 +502,8 @@ fn parse_primitive_material(
     let mut roughness_factor = 1.0f32;
     let mut base_color_texture_path = None;
     let mut base_color_texture_bytes = None;
+    let mut metallic_roughness_texture_path = None;
+    let mut metallic_roughness_texture_bytes = None;
     if let Some(pbr) = pbr {
         if let Some(arr) = pbr.get("baseColorFactor").and_then(|v| v.as_array()) {
             for (i, v) in arr.iter().take(4).enumerate() {
@@ -457,6 +527,16 @@ fn parse_primitive_material(
             base_color_texture_path = path;
             base_color_texture_bytes = bytes;
         }
+        if let Some(tex) = pbr.get("metallicRoughnessTexture") {
+            let tex_i = tex
+                .get("index")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| "metallicRoughnessTexture missing index".to_string())?
+                as usize;
+            let (path, bytes) = load_gltf_image(root, tex_i, base_dir, buffers)?;
+            metallic_roughness_texture_path = path;
+            metallic_roughness_texture_bytes = bytes;
+        }
     }
     Ok(Some(GltfPbrMaterial {
         base_color_factor,
@@ -464,6 +544,8 @@ fn parse_primitive_material(
         roughness_factor,
         base_color_texture_path,
         base_color_texture_bytes,
+        metallic_roughness_texture_path,
+        metallic_roughness_texture_bytes,
     }))
 }
 
@@ -476,7 +558,7 @@ fn load_gltf_image(
     let textures = root
         .get("textures")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| "gltf has baseColorTexture but no textures[]".to_string())?;
+        .ok_or_else(|| "gltf has a texture index but no textures[]".to_string())?;
     let tex = textures
         .get(texture_index)
         .ok_or_else(|| format!("missing texture {texture_index}"))?;

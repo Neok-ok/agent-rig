@@ -197,11 +197,24 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
       }
     }
   }
+  let mrTextureUrl = null;
+  if (pbr.metallicRoughnessTexture && gltf.textures && gltf.images) {
+    const tex = gltf.textures[pbr.metallicRoughnessTexture.index];
+    if (tex && tex.source !== undefined) {
+      const img = gltf.images[tex.source];
+      if (img && img.uri) {
+        mrTextureUrl = img.uri.startsWith('data:')
+          ? img.uri
+          : new URL(img.uri, new URL(gltfUrl, location.href)).href;
+      }
+    }
+  }
   return {
     baseColorFactor: factor,
     metallicFactor: pbr.metallicFactor === undefined ? 1 : pbr.metallicFactor,
     roughnessFactor: pbr.roughnessFactor === undefined ? 1 : pbr.roughnessFactor,
     textureUrl,
+    mrTextureUrl,
   };
 }
 
@@ -322,6 +335,18 @@ for (const body of spec.bodies) {
     tex.wrapT = THREE.RepeatWrapping;
     tex.needsUpdate = true;
     mat.map = tex;
+    mat.needsUpdate = true;
+  }
+  if (gltfPbr && gltfPbr.mrTextureUrl) {
+    const mr = await loadTexture(gltfPbr.mrTextureUrl);
+    if ('LinearSRGBColorSpace' in THREE) mr.colorSpace = THREE.LinearSRGBColorSpace;
+    else if ('NoColorSpace' in THREE) mr.colorSpace = THREE.NoColorSpace;
+    mr.wrapS = THREE.RepeatWrapping;
+    mr.wrapT = THREE.RepeatWrapping;
+    mr.needsUpdate = true;
+    // glTF convention: same packed map; Three.js reads roughness from G, metalness from B.
+    mat.metalnessMap = mr;
+    mat.roughnessMap = mr;
     mat.needsUpdate = true;
   }
   const mesh = new THREE.Mesh(geom, mat);

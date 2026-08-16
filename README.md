@@ -1,6 +1,6 @@
-# agent-rig (increments 1–12)
+# agent-rig (increments 1–13)
 
-Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness). Directional and point lights both cast shadow rays. No GPU. No Three.js in the engine.
+Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture). Directional and point lights both cast shadow rays. No GPU. No Three.js in the engine.
 
 ## Increment 1
 
@@ -418,6 +418,38 @@ cd /workspace/agent-rig && ./scripts/increment12-threejs.sh
 
 Writes `artifacts/increment12/threejs_00.png` … `threejs_07.png` (stock MeshStandardMaterial, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450). Camera position is passed as a `cam` query param.
 
+
+## Increment 13
+
+Same courtyard as increment 12 (bowl + rock + metal ball + copper pillar, directional + shadowed point light). The pillar glTF now has a packed `metallicRoughnessTexture` (G=roughness, B=metallic) with high-contrast horizontal bands — chrome stripes vs matte — so metal/roughness vary across the surface. Scene-JSON pillar material stays dull (metallic 0, roughness 0.85) and must not win over the texture. Single pose (no 8-orbit).
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment13.sh
+```
+
+Writes:
+
+- `artifacts/increment13/scene.json` — authored increment-11 courtyard (dull JSON pillar fallback)
+- `artifacts/increment13/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment13/frame.png` — our renderer, 800x450, post-step pose
+- `artifacts/increment13/threejs-frame.png` — stock Three.js, same pose (metalnessMap + roughnessMap from the glTF, no IBL/tonemap)
+
+### CLI
+
+```bash
+agent-rig increment13 --out artifacts/increment13
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment13-threejs.sh
+```
+
+Writes `artifacts/increment13/threejs-frame.png` (stock MeshStandardMaterial, same packed MR map on metalnessMap and roughnessMap, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450).
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
@@ -425,7 +457,7 @@ JSON object with `camera`, `lights`, and `bodies`.
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`
 - `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path)
-- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors), that drives the look; scene JSON `material` is the fallback when the glTF has no material.
+- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel.
 
 Gravity is `[0, -9.81, 0]`.
 
@@ -458,3 +490,5 @@ Increment 10: the scene has a point light (`position`, `color`, `intensity`) plu
 Increment 11: the point light casts a shadow ray (occluded if something sits between the hit and the lamp); the courtyard and both lights stay; after stepping the glTF pillar still has a collider type and a contact in the dump; `increment11` writes scene + physics dump + our PNG (local umbra the unshadowed point light would not make).
 
 Increment 12: same courtyard and lights; physics is stepped once; eight orbit cameras write `frame_00.png`…`frame_07.png` that are not copies of one still; the dump still records the pillar collider and a contact involving it; `increment12` writes scene + physics dump + the 8 PNGs.
+
+Increment 13: the glTF has `pbrMetallicRoughness.metallicRoughnessTexture`; the loaded mesh samples G/B (not the scene-JSON metallic 0 / roughness 0.85); after stepping there is a contact involving the glTF body and the dump records its collider type; `increment13` writes scene + physics dump + our PNG.
