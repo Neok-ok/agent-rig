@@ -1,4 +1,4 @@
-# agent-rig (increments 1–14)
+# agent-rig (increments 1–15)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture and optional tangent-space normalTexture). Directional and point lights both cast shadow rays. No GPU. No Three.js in the engine.
 
@@ -481,6 +481,39 @@ cd /workspace/agent-rig && ./scripts/increment14-threejs.sh
 
 Writes `artifacts/increment14/threejs-frame.png` (stock MeshStandardMaterial, same glTF normalMap + MR maps, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450).
 
+## Increment 15
+
+Same courtyard as increment 14 (bowl + rock + metal ball + copper pillar with metallicRoughnessTexture + normalTexture, directional + shadowed point light). The ball is given a shove (non-zero linear velocity) and physics is stepped across 8 frames from the increment-11 courtyard camera. Opposite of increment 12: one camera, eight physics poses — no orbit.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment15.sh
+```
+
+Writes:
+
+- `artifacts/increment15/scene.json` — increment-14 courtyard plus ball linear velocity
+- `artifacts/increment15/physics.json` — trajectory dump (8 frames: positions, velocities, contacts; pillar collider)
+- `artifacts/increment15/frame_00.png` … `frame_07.png` — our renderer, 800x450, same camera, 8 physics poses
+- `artifacts/increment15/threejs_00.png` … `threejs_07.png` — stock Three.js, same 8 poses (no IBL/tonemap)
+
+### CLI
+
+```bash
+agent-rig increment15 --out artifacts/increment15
+```
+
+`--frames` is the number of PNGs (default 8). The world is stepped `stride` times between frames (default 12).
+
+### Three.js baseline (same 8 poses)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment15-threejs.sh
+```
+
+Writes `artifacts/increment15/threejs_00.png` … `threejs_07.png` (stock MeshStandardMaterial, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450). Loads the increment-15 scene JSON and applies each trajectory frame.
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
@@ -525,3 +558,5 @@ Increment 12: same courtyard and lights; physics is stepped once; eight orbit ca
 Increment 13: the glTF has `pbrMetallicRoughness.metallicRoughnessTexture`; the loaded mesh samples G/B (not the scene-JSON metallic 0 / roughness 0.85); after stepping there is a contact involving the glTF body and the dump records its collider type; `increment13` writes scene + physics dump + our PNG.
 
 Increment 14: the glTF has `normalTexture`; the loaded mesh shades with sampled tangent-space normals (TBN from TANGENT or from triangle + UV), not the geometric N alone; after stepping there is a contact involving the glTF body and the dump records its collider type; `increment14` writes scene + physics dump + our PNG.
+
+Increment 15: same courtyard and lights; the ball has a non-zero initial linear velocity; physics is stepped across 8 frames from the increment-11 camera (no orbit); `frame_00` and `frame_07` are not copies; after the sim the dump still records the pillar collider and a contact involving it; `increment15` writes scene + physics dump + the 8 PNGs.

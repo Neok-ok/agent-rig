@@ -1,4 +1,4 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–14).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–15).
 
 mod mesh;
 mod physics;
@@ -14,7 +14,7 @@ pub use mesh::{
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
     increment3_scene_json, increment4_scene, increment4_scene_json, increment5_scene,
-    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, parse_scene, Body, Camera,
+    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, parse_scene, Body, Camera,
     Light, Material, MeshCollider, Scene, Shape,
 };
 
@@ -38,6 +38,8 @@ pub const INCREMENT12_STEPS: u32 = 100;
 pub const INCREMENT12_ORBIT_FRAMES: u32 = 8;
 pub const INCREMENT13_STEPS: u32 = 100;
 pub const INCREMENT14_STEPS: u32 = 100;
+pub const INCREMENT15_FRAMES: u32 = 8;
+pub const INCREMENT15_STRIDE: u32 = 12;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -170,6 +172,64 @@ pub fn run_increment13(out_dir: &Path, steps: u32, dt: f32, width: u32, height: 
 /// Increment 14: same courtyard; glTF normalTexture drives tangent-space bump.
 pub fn run_increment14(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
     write_step_render(out_dir, &increment14_scene(), steps, dt, width, height)
+}
+
+#[derive(Debug, Clone)]
+pub struct Increment15Paths {
+    pub scene: PathBuf,
+    pub physics: PathBuf,
+    pub frames: Vec<PathBuf>,
+}
+
+/// Increment 15: increment-14 courtyard, shove the ball, 8 physics frames, one camera.
+pub fn run_increment15(
+    out_dir: &Path,
+    frames: u32,
+    frame_stride: u32,
+    dt: f32,
+    width: u32,
+    height: u32,
+) -> Result<Increment15Paths, String> {
+    fs::create_dir_all(out_dir).map_err(|e| format!("create {out_dir:?}: {e}"))?;
+
+    let scene = increment15_scene();
+    let scene_path = out_dir.join("scene.json");
+    let physics_path = out_dir.join("physics.json");
+
+    let json = serde_json::to_string_pretty(&scene).map_err(|e| e.to_string())?;
+    fs::write(&scene_path, json).map_err(|e| format!("write scene: {e}"))?;
+
+    let traj = simulate_trajectory(&scene, frames, frame_stride, dt)?;
+    let last = traj
+        .frames
+        .last()
+        .ok_or_else(|| "trajectory produced no frames".to_string())?;
+    let dump = serde_json::json!({
+        "steps": last.step,
+        "dt": traj.dt,
+        "gravity": [0.0, -9.81, 0.0],
+        "bodies": last.bodies,
+        "contacts": last.contacts,
+        "frame_stride": traj.frame_stride,
+        "frames": traj.frames,
+    });
+    let dump_json = serde_json::to_string_pretty(&dump).map_err(|e| e.to_string())?;
+    fs::write(&physics_path, dump_json).map_err(|e| format!("write physics: {e}"))?;
+
+    let mut frame_paths = Vec::with_capacity(traj.frames.len());
+    for (i, snap) in traj.frames.iter().enumerate() {
+        let mut framed = scene.clone();
+        apply_body_states(&mut framed, &snap.bodies);
+        let path = out_dir.join(format!("frame_{i:02}.png"));
+        render_scene_to_png(&framed, width, height, &path)?;
+        frame_paths.push(path);
+    }
+
+    Ok(Increment15Paths {
+        scene: scene_path,
+        physics: physics_path,
+        frames: frame_paths,
+    })
 }
 
 fn write_step_render(
