@@ -1,6 +1,6 @@
-# agent-rig (increments 1–3)
+# agent-rig (increments 1–4)
 
-Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres and boxes). No GPU. No Three.js in the engine.
+Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes). No GPU. No Three.js in the engine.
 
 ## Increment 1
 
@@ -99,13 +99,50 @@ cd /workspace/agent-rig && ./scripts/increment3-threejs.sh
 
 Writes `artifacts/increment3/threejs-frame.png` (stock MeshStandardMaterial, ambient 0.25 + directional, shadows on, no env map, no tonemap, 800x450). Loads the increment-3 scene JSON and applies the last trajectory pose.
 
+
+## Increment 4
+
+Triangle-mesh body: a faceted crystal/rock (OBJ) sits on the ground with a metal sphere rolling into it, plus a rough crate. Same light as before. Physics uses a convex-hull collider on the mesh; the dump records `collider` per body.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment4.sh
+```
+
+Writes:
+
+- `artifacts/increment4/scene.json` — authored scene (mesh + primitives)
+- `artifacts/increment4/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment4/frame.png` — our renderer, 800x450, post-step poses
+- `artifacts/increment4/threejs-frame.png` — stock Three.js, same poses
+
+### CLI
+
+```bash
+agent-rig increment4 --out artifacts/increment4
+agent-rig sim artifacts/increment4/scene.json --out artifacts/increment4-sim
+agent-rig render artifacts/increment4/scene.json --physics artifacts/increment4/physics.json --out artifacts/increment4/frame.png
+```
+
+`sim` / `render` load the OBJ from `shape.path`.
+
+### Three.js baseline (same post-step poses)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment4-threejs.sh
+```
+
+Writes `artifacts/increment4/threejs-frame.png` (stock MeshStandardMaterial, ambient 0.25 + directional, shadows on, no env map, no tonemap, 800x450). Loads the increment-4 scene JSON (including the OBJ mesh) and applies `physics.json` poses.
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
 
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`
-- `bodies`: `id`, `shape` (`box` + full `size` xyz, or `sphere` + `radius`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`)
+- `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`)
+- mesh `path` is relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`.
 
 Gravity is `[0, -9.81, 0]`.
 
@@ -120,3 +157,5 @@ Increment 1: parse the demo scene; after stepping, the ball has dropped and cont
 Increment 2: scene parses with ≥3 non-ground bodies, a sphere and a box, metal and rough dielectric; after stepping, at least two dynamic bodies have moved and the dump has contacts (including a non-ground pair); `step` / `render` write the named files; `run_increment2` writes the three artifacts.
 
 Increment 3: scene has a ramp (rotated static box); `sim` writes ≥8 frame PNGs and a trajectory dump with one snapshot per frame; a dynamic body moves across the trajectory; `increment3.sh` writes scene + trajectory + last-frame + frames/.
+
+Increment 4: an OBJ triangle mesh loads (vertex/triangle counts > 0, not a box/sphere); after stepping there is a contact involving the mesh body; `increment4` writes scene + physics dump + our PNG.

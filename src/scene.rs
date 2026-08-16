@@ -1,10 +1,16 @@
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
+
+use crate::mesh::{load_obj, resolve_mesh_path, TriangleMesh};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scene {
     pub camera: Camera,
     pub lights: Vec<Light>,
     pub bodies: Vec<Body>,
+    #[serde(skip, default)]
+    pub mesh_search_dirs: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +51,67 @@ pub enum Shape {
     Box { size: [f32; 3] },
     #[serde(rename = "sphere")]
     Sphere { radius: f32 },
+    #[serde(rename = "mesh")]
+    Mesh {
+        path: String,
+        #[serde(default = "default_mesh_collider")]
+        collider: MeshCollider,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MeshCollider {
+    ConvexHull,
+    Trimesh,
+}
+
+fn default_mesh_collider() -> MeshCollider {
+    MeshCollider::ConvexHull
+}
+
+impl Shape {
+    pub fn collider_kind(&self) -> &'static str {
+        match self {
+            Shape::Box { .. } => "cuboid",
+            Shape::Sphere { .. } => "ball",
+            Shape::Mesh {
+                collider: MeshCollider::ConvexHull,
+                ..
+            } => "convex_hull",
+            Shape::Mesh {
+                collider: MeshCollider::Trimesh,
+                ..
+            } => "trimesh",
+        }
+    }
+}
+
+impl Scene {
+    pub fn resolve_mesh(&self, path: &str) -> Result<PathBuf, String> {
+        resolve_mesh_path(path, &self.mesh_search_dirs)
+    }
+
+    pub fn load_body_mesh(&self, path: &str) -> Result<TriangleMesh, String> {
+        load_obj(&self.resolve_mesh(path)?)
+    }
+
+    pub fn with_default_mesh_search(mut self) -> Self {
+        self.mesh_search_dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+        self
+    }
+}
+
+pub fn load_scene_from_path(path: &Path) -> Result<Scene, String> {
+    let txt = std::fs::read_to_string(path).map_err(|e| format!("read scene {path:?}: {e}"))?;
+    let mut scene = parse_scene(&txt)?;
+    if let Some(dir) = path.parent() {
+        if !dir.as_os_str().is_empty() {
+            scene.mesh_search_dirs.push(dir.to_path_buf());
+        }
+    }
+    scene.mesh_search_dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+    Ok(scene)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,4 +254,52 @@ pub fn increment3_scene_json() -> &'static str {
 
 pub fn increment3_scene() -> Scene {
     parse_scene(INCREMENT3_SCENE_JSON).expect("increment3 scene JSON is valid")
+}
+
+pub const INCREMENT4_SCENE_JSON: &str = r#"{
+  "camera": { "position": [3.5, 2.15, 5.1], "look_at": [0.15, 0.42, 0.0], "fov_y_deg": 40 },
+  "lights": [{ "type": "directional", "direction": [-0.45, -1.0, -0.35], "color": [1.0, 0.97, 0.92], "intensity": 3.0 }],
+  "bodies": [
+    {
+      "id": "ground",
+      "shape": { "type": "box", "size": [10, 0.2, 10] },
+      "position": [0, -0.1, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "material": { "albedo": [0.35, 0.36, 0.38], "roughness": 0.8, "metallic": 0.0 }
+    },
+    {
+      "id": "rock",
+      "shape": { "type": "mesh", "path": "meshes/rock.obj", "collider": "convex_hull" },
+      "position": [0.45, 0.002, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 12.0,
+      "material": { "albedo": [0.48, 0.52, 0.62], "roughness": 0.28, "metallic": 0.2 }
+    },
+    {
+      "id": "ball",
+      "shape": { "type": "sphere", "radius": 0.32 },
+      "position": [-1.35, 0.85, 0.04],
+      "mass": 1.0,
+      "linear_velocity": [3.4, 0.15, 0],
+      "material": { "albedo": [0.92, 0.78, 0.45], "roughness": 0.15, "metallic": 0.9 }
+    },
+    {
+      "id": "crate",
+      "shape": { "type": "box", "size": [0.44, 0.44, 0.44] },
+      "position": [1.55, 0.22, -0.55],
+      "mass": 0.6,
+      "material": { "albedo": [0.22, 0.38, 0.28], "roughness": 0.85, "metallic": 0.0 }
+    }
+  ]
+}"#;
+
+pub fn increment4_scene_json() -> &'static str {
+    INCREMENT4_SCENE_JSON
+}
+
+pub fn increment4_scene() -> Scene {
+    parse_scene(INCREMENT4_SCENE_JSON)
+        .expect("increment4 scene JSON is valid")
+        .with_default_mesh_search()
 }

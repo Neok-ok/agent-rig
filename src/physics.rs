@@ -2,7 +2,7 @@ use rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::scene::{Scene, Shape};
+use crate::scene::{MeshCollider, Scene, Shape};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhysicsDump {
@@ -20,6 +20,8 @@ pub struct PhysicsBodyState {
     pub rotation_wxyz: [f32; 4],
     pub linear_velocity: [f32; 3],
     pub angular_velocity: [f32; 3],
+    #[serde(default)]
+    pub collider: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +51,7 @@ struct PhysicsWorld {
     collider_set: ColliderSet,
     body_handles: HashMap<String, RigidBodyHandle>,
     collider_to_id: HashMap<ColliderHandle, String>,
+    body_colliders: HashMap<String, String>,
     body_ids: Vec<String>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
@@ -63,12 +66,13 @@ struct PhysicsWorld {
 }
 
 impl PhysicsWorld {
-    fn from_scene(scene: &Scene, dt: f32) -> Self {
+    fn from_scene(scene: &Scene, dt: f32) -> Result<Self, String> {
         let mut world = Self {
             rigid_body_set: RigidBodySet::new(),
             collider_set: ColliderSet::new(),
             body_handles: HashMap::new(),
             collider_to_id: HashMap::new(),
+            body_colliders: HashMap::new(),
             body_ids: Vec::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
@@ -85,11 +89,11 @@ impl PhysicsWorld {
             ccd_solver: CCDSolver::new(),
             query_pipeline: QueryPipeline::new(),
         };
-        world.populate(scene);
-        world
+        world.populate(scene)?;
+        Ok(world)
     }
 
-    fn populate(&mut self, scene: &Scene) {
+    fn populate(&mut self, scene: &Scene) -> Result<(), String> {
 
     for body in &scene.bodies {
         let [x, y, z] = body.position;
@@ -109,7 +113,8 @@ impl PhysicsWorld {
         let handle = self.rigid_body_set.insert(rb);
 
         // Density from authored mass so inertia is non-zero (needed for body-body hits).
-        let collider = match body.shape {
+        let kind = body.shape.collider_kind().to_string();
+        let collider = match &body.shape {
             Shape::Box { size } => {
                 let mut b = ColliderBuilder::cuboid(size[0] * 0.5, size[1] * 0.5, size[2] * 0.5)
                     .friction(0.35)
@@ -121,10 +126,29 @@ impl PhysicsWorld {
                 b.build()
             }
             Shape::Sphere { radius } => {
-                let mut b = ColliderBuilder::ball(radius).friction(0.25).restitution(0.05);
+                let mut b = ColliderBuilder::ball(*radius).friction(0.25).restitution(0.05);
                 if body.mass > 0.0 {
                     let vol = (4.0 / 3.0 * std::f32::consts::PI * radius * radius * radius).max(1e-8);
                     b = b.density(body.mass / vol);
+                }
+                b.build()
+            }
+            Shape::Mesh { path, collider } => {
+                let mesh = scene.load_body_mesh(path)?;
+                let points: Vec<Point<f32>> = mesh
+                    .vertices
+                    .iter()
+                    .map(|v| Point::new(v[0], v[1], v[2]))
+                    .collect();
+                let mut b = match collider {
+                    MeshCollider::ConvexHull => ColliderBuilder::convex_hull(&points)
+                        .ok_or_else(|| format!("convex hull failed for mesh {path}"))?,
+                    MeshCollider::Trimesh => ColliderBuilder::trimesh(points, mesh.indices.clone())
+                        .map_err(|e| format!("trimesh collider for {path}: {e}"))?,
+                };
+                b = b.friction(0.45).restitution(0.05);
+                if body.mass > 0.0 {
+                    b = b.density(body.mass / mesh.volume());
                 }
                 b.build()
             }
@@ -132,8 +156,10 @@ impl PhysicsWorld {
         let ch = self.collider_set.insert_with_parent(collider, handle, &mut self.rigid_body_set);
             self.body_handles.insert(body.id.clone(), handle);
             self.collider_to_id.insert(ch, body.id.clone());
+            self.body_colliders.insert(body.id.clone(), kind);
             self.body_ids.push(body.id.clone());
         }
+        Ok(())
     }
 
     fn step(&mut self) {
@@ -169,6 +195,7 @@ impl PhysicsWorld {
                 rotation_wxyz: [r.w, r.i, r.j, r.k],
                 linear_velocity: [lv.x, lv.y, lv.z],
                 angular_velocity: [av.x, av.y, av.z],
+                collider: self.body_colliders.get(id).cloned().unwrap_or_default(),
             });
         }
         bodies
@@ -229,7 +256,7 @@ impl PhysicsWorld {
 }
 
 pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, String> {
-    let mut world = PhysicsWorld::from_scene(scene, dt);
+    let mut world = PhysicsWorld::from_scene(scene, dt)?;
     for _ in 0..steps {
         world.step();
     }
@@ -256,7 +283,7 @@ pub fn simulate_trajectory(
     if frame_stride == 0 {
         return Err("frame_stride must be ≥ 1".into());
     }
-    let mut world = PhysicsWorld::from_scene(scene, dt);
+    let mut world = PhysicsWorld::from_scene(scene, dt)?;
     let mut frames = Vec::with_capacity(frame_count as usize);
     frames.push(world.snapshot_frame(0));
     for i in 1..frame_count {

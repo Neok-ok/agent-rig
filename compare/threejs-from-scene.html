@@ -91,6 +91,30 @@ for (const light of spec.lights) {
   scene.add(sun.target);
 }
 
+function geomFromOBJ(text) {
+  const verts = [];
+  const faces = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const p = line.split(/\s+/);
+    if (p[0] === 'v' && p.length >= 4) {
+      verts.push([+p[1], +p[2], +p[3]]);
+    } else if (p[0] === 'f') {
+      const idx = p.slice(1).map(t => parseInt(t.split('/')[0], 10) - 1);
+      for (let i = 1; i + 1 < idx.length; i++) {
+        faces.push(idx[0], idx[i], idx[i + 1]);
+      }
+    }
+  }
+  const positions = [];
+  for (let i = 0; i < faces.length; i++) positions.push(...verts[faces[i]]);
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geom.computeVertexNormals();
+  return geom;
+}
+
 for (const body of spec.bodies) {
   const pose = poses[body.id];
   const position = pose ? pose.position : body.position;
@@ -105,6 +129,11 @@ for (const body of spec.bodies) {
     geom = new THREE.BoxGeometry(...body.shape.size);
   } else if (body.shape.type === 'sphere') {
     geom = new THREE.SphereGeometry(body.shape.radius, 48, 32);
+  } else if (body.shape.type === 'mesh') {
+    const rel = body.shape.path || '';
+    const url = rel.startsWith('/') ? rel : '/' + rel;
+    const objText = await (await fetch(url)).text();
+    geom = geomFromOBJ(objText);
   } else {
     continue;
   }

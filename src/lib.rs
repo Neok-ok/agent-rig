@@ -1,14 +1,17 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–3).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–4).
 
+mod mesh;
 mod physics;
 mod render;
 mod scene;
 
 pub use physics::{simulate_trajectory, step_physics, PhysicsBodyState, PhysicsContact, PhysicsDump, Trajectory, TrajectoryFrame};
 pub use render::{render_scene, render_scene_to_png, FRAME_HEIGHT, FRAME_WIDTH};
+pub use mesh::{load_obj, parse_obj, TriangleMesh};
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
-    increment3_scene_json, parse_scene, Body, Camera, Light, Material, Scene, Shape,
+    increment3_scene_json, increment4_scene, increment4_scene_json, parse_scene, Body, Camera,
+    Light, Material, MeshCollider, Scene, Shape,
 };
 
 use std::fs;
@@ -19,6 +22,7 @@ pub const DEFAULT_DT: f32 = 1.0 / 60.0;
 pub const INCREMENT2_STEPS: u32 = 120;
 pub const INCREMENT3_FRAMES: u32 = 10;
 pub const INCREMENT3_STRIDE: u32 = 20;
+pub const INCREMENT4_STEPS: u32 = 100;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -35,6 +39,11 @@ pub fn run_increment1(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u
 /// Increment 2: metal ball / rough crate / metal stopper, step, render post-step PNG.
 pub fn run_increment2(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
     write_step_render(out_dir, &increment2_scene(), steps, dt, width, height)
+}
+
+/// Increment 4: triangle-mesh rock + primitives, step, render post-step PNG.
+pub fn run_increment4(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
+    write_step_render(out_dir, &increment4_scene(), steps, dt, width, height)
 }
 
 fn write_step_render(
@@ -172,8 +181,7 @@ pub fn sim_scene_file(
 }
 
 pub fn load_scene_file(path: &Path) -> Result<Scene, String> {
-    let txt = fs::read_to_string(path).map_err(|e| format!("read scene {path:?}: {e}"))?;
-    parse_scene(&txt)
+    crate::scene::load_scene_from_path(path)
 }
 
 pub fn step_scene_file(scene_path: &Path, out_path: &Path, steps: u32, dt: f32) -> Result<(), String> {

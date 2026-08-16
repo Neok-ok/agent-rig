@@ -1,4 +1,4 @@
-//! Tiny CPU Cook-Torrance raytracer with procedural IBL (spheres and oriented boxes).
+//! Tiny CPU Cook-Torrance raytracer with procedural IBL (spheres, oriented boxes, triangle meshes).
 
 use image::{Rgb, RgbImage};
 use std::path::Path;
@@ -144,6 +144,11 @@ struct Prim {
 enum PrimKind {
     Sphere { radius: f32 },
     Box { half: V3 },
+    Mesh {
+        tris: Vec<[V3; 3]>,
+        aabb_min: V3,
+        aabb_max: V3,
+    },
 }
 
 struct Hit {
@@ -161,26 +166,62 @@ struct EnvSh {
 }
 
 pub fn render_scene(scene: &Scene, width: u32, height: u32) -> RgbImage {
-    let prims: Vec<Prim> = scene
-        .bodies
-        .iter()
-        .map(|b| {
-            let kind = match b.shape {
-                Shape::Sphere { radius } => PrimKind::Sphere { radius },
-                Shape::Box { size } => PrimKind::Box {
-                    half: V3::new(size[0] * 0.5, size[1] * 0.5, size[2] * 0.5),
-                },
-            };
-            Prim {
-                kind,
-                center: V3::from_arr(b.position),
-                rotation: Quat::from_wxyz(b.rotation_wxyz),
-                albedo: V3::from_arr(b.material.albedo),
-                roughness: b.material.roughness.clamp(0.04, 1.0),
-                metallic: b.material.metallic.clamp(0.0, 1.0),
+    let mut prims: Vec<Prim> = Vec::with_capacity(scene.bodies.len());
+    for b in &scene.bodies {
+        let kind = match &b.shape {
+            Shape::Sphere { radius } => PrimKind::Sphere { radius: *radius },
+            Shape::Box { size } => PrimKind::Box {
+                half: V3::new(size[0] * 0.5, size[1] * 0.5, size[2] * 0.5),
+            },
+            Shape::Mesh { path, .. } => {
+                let mesh = scene
+                    .load_body_mesh(path)
+                    .unwrap_or_else(|e| panic!("load mesh {path}: {e}"));
+                let rot = Quat::from_wxyz(b.rotation_wxyz);
+                let center = V3::from_arr(b.position);
+                let mut tris = Vec::with_capacity(mesh.indices.len());
+                let mut aabb_min = V3::new(f32::MAX, f32::MAX, f32::MAX);
+                let mut aabb_max = V3::new(f32::MIN, f32::MIN, f32::MIN);
+                for idx in &mesh.indices {
+                    let a = rot
+                        .rotate(V3::from_arr(mesh.vertices[idx[0] as usize]))
+                        .add(center);
+                    let c0 = rot
+                        .rotate(V3::from_arr(mesh.vertices[idx[1] as usize]))
+                        .add(center);
+                    let c1 = rot
+                        .rotate(V3::from_arr(mesh.vertices[idx[2] as usize]))
+                        .add(center);
+                    for pt in [a, c0, c1] {
+                        aabb_min = V3::new(
+                            aabb_min.x.min(pt.x),
+                            aabb_min.y.min(pt.y),
+                            aabb_min.z.min(pt.z),
+                        );
+                        aabb_max = V3::new(
+                            aabb_max.x.max(pt.x),
+                            aabb_max.y.max(pt.y),
+                            aabb_max.z.max(pt.z),
+                        );
+                    }
+                    tris.push([a, c0, c1]);
+                }
+                PrimKind::Mesh {
+                    tris,
+                    aabb_min,
+                    aabb_max,
+                }
             }
-        })
-        .collect();
+        };
+        prims.push(Prim {
+            kind,
+            center: V3::from_arr(b.position),
+            rotation: Quat::from_wxyz(b.rotation_wxyz),
+            albedo: V3::from_arr(b.material.albedo),
+            roughness: b.material.roughness.clamp(0.04, 1.0),
+            metallic: b.material.metallic.clamp(0.0, 1.0),
+        });
+    }
 
     let env = project_env_sh();
 
@@ -246,10 +287,95 @@ fn closest_hit(orig: V3, dir: V3, prims: &[Prim], tmin: f32, tmax: f32) -> Optio
 }
 
 fn intersect(orig: V3, dir: V3, p: &Prim, tmin: f32, tmax: f32) -> Option<Hit> {
-    match p.kind {
-        PrimKind::Sphere { radius } => intersect_sphere(orig, dir, p, radius, tmin, tmax),
-        PrimKind::Box { half } => intersect_obb(orig, dir, p, half, tmin, tmax),
+    match &p.kind {
+        PrimKind::Sphere { radius } => intersect_sphere(orig, dir, p, *radius, tmin, tmax),
+        PrimKind::Box { half } => intersect_obb(orig, dir, p, *half, tmin, tmax),
+        PrimKind::Mesh {
+            tris,
+            aabb_min,
+            aabb_max,
+        } => intersect_mesh(orig, dir, p, tris, *aabb_min, *aabb_max, tmin, tmax),
     }
+}
+
+fn intersect_aabb(orig: V3, dir: V3, mn: V3, mx: V3, tmin: f32, tmax: f32) -> bool {
+    let mut t0 = tmin;
+    let mut t1 = tmax;
+    for (o, d, a, b) in [
+        (orig.x, dir.x, mn.x, mx.x),
+        (orig.y, dir.y, mn.y, mx.y),
+        (orig.z, dir.z, mn.z, mx.z),
+    ] {
+        if d.abs() < 1e-12 {
+            if o < a || o > b {
+                return false;
+            }
+            continue;
+        }
+        let inv = 1.0 / d;
+        let mut tn = (a - o) * inv;
+        let mut tf = (b - o) * inv;
+        if tn > tf {
+            std::mem::swap(&mut tn, &mut tf);
+        }
+        t0 = t0.max(tn);
+        t1 = t1.min(tf);
+        if t0 > t1 {
+            return false;
+        }
+    }
+    true
+}
+
+/// Möller–Trumbore. Faceted face normal.
+fn intersect_triangle(orig: V3, dir: V3, v0: V3, v1: V3, v2: V3, tmin: f32, tmax: f32) -> Option<(f32, V3)> {
+    let e1 = v1.sub(v0);
+    let e2 = v2.sub(v0);
+    let pvec = dir.cross(e2);
+    let det = e1.dot(pvec);
+    if det.abs() < 1e-8 {
+        return None;
+    }
+    let inv = 1.0 / det;
+    let tvec = orig.sub(v0);
+    let u = tvec.dot(pvec) * inv;
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let qvec = tvec.cross(e1);
+    let v = dir.dot(qvec) * inv;
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let t = e2.dot(qvec) * inv;
+    if t < tmin || t > tmax {
+        return None;
+    }
+    Some((t, e1.cross(e2).norm()))
+}
+
+fn intersect_mesh(
+    orig: V3,
+    dir: V3,
+    p: &Prim,
+    tris: &[[V3; 3]],
+    aabb_min: V3,
+    aabb_max: V3,
+    tmin: f32,
+    tmax: f32,
+) -> Option<Hit> {
+    if !intersect_aabb(orig, dir, aabb_min, aabb_max, tmin, tmax) {
+        return None;
+    }
+    let mut best_t = tmax;
+    let mut best: Option<(f32, V3, V3)> = None;
+    for [v0, v1, v2] in tris {
+        if let Some((t, n)) = intersect_triangle(orig, dir, *v0, *v1, *v2, tmin, best_t) {
+            best_t = t;
+            best = Some((t, orig.add(dir.mul(t)), n));
+        }
+    }
+    best.map(|(t, pnt, n)| hit(t, pnt, n, p))
 }
 
 fn intersect_sphere(orig: V3, dir: V3, p: &Prim, radius: f32, tmin: f32, tmax: f32) -> Option<Hit> {
