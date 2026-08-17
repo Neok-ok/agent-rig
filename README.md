@@ -1,4 +1,4 @@
-# agent-rig (increments 1–45)
+# agent-rig (increments 1–46)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1458,6 +1458,38 @@ cd /workspace/agent-rig && ./scripts/increment45-threejs.sh
 Writes `artifacts/increment45/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, lantern emissive, no env map, no tonemap, 800x450). Three.js ignores motors; bodies still use our post-step dump poses (half-open gate, settled cork, fallen bob, ridden rider, slid platform, ball off its seat, seated lid, closed drawer).
 
 
+## Increment 46
+
+Same courtyard as increment 45 (bowl + rock + gold ball with clearcoat / anisotropy / iridescence, copper pillar with AO, glass pane with transmission + IOR + volume + dispersion, crate, sheen bench, hanging lantern + hinge motor 4/8, drawer + slider motor -2/6, charm + ball socket, drawer-open trigger, emissive lantern 16, directional + area light, `drawer_probe` raycast, `drawer_sweep` shapecast, crate lid + fixed joint, ball impulse `[1.8, 0.4, 0.5]`, kinematic `platform` sliding +X at `[0.45, 0, 0]`, dynamic clay `rider`, teal `gate` on a limited hinge `[0, 1.15]` driven to `motor_target_position` ~0.55, brass `bob` on a breakable `gate`–`bob` rope, tan `cork` on a gate spring). Increment 46 changes ONLY the single camera: position `[1.85, 1.35, 3.15]`, look_at `[0.35, 0.42, 1.55]`, `fov_y_deg` 40 — aimed at the gate / cork / fallen-bob cluster. Still one `camera`, one `frame.png`. No `cameras[]` array. No extra files. `increment45_scene()` keeps the wide courtyard camera `[3.6, 2.35, 5.2]` look_at `[0.1, 0.38, 0]`. Increment 18–45 scene JSON is unchanged (old camera 3.6, not 1.85). Physics is the same as 45: after 120 steps gate angle is within 0.15 of 0.55, cork spring present, bob on the floor, `broken_joints` gate–bob. No new bodies, lights, joints, or impulses. Gate + cork fill the frame (large pixel delta vs 45 is expected). Ours still wins vs Three.js on materials.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment46.sh
+```
+
+Writes:
+
+- `artifacts/increment46/scene.json` — increment-45 courtyard; single camera re-aimed at the gate cluster
+- `artifacts/increment46/physics.json` — post-step dump (same physics as increment 45: gate angle ~0.55, cork spring, fallen bob, `broken_joints`)
+- `artifacts/increment46/frame.png` — our renderer, 800x450, gate + cork fill the frame
+- `artifacts/increment46/threejs-frame.png` — stock Three.js, same pose (`MeshPhysicalMaterial`, no env map, no tonemap); gate from dump pose
+
+### CLI
+
+```bash
+agent-rig increment46 --out artifacts/increment46
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment46-threejs.sh
+```
+
+Writes `artifacts/increment46/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, lantern emissive, no env map, no tonemap, 800x450). Three.js ignores motors; bodies still use our post-step dump poses (half-open gate, settled cork, fallen bob, ridden rider, slid platform, ball off its seat, seated lid, closed drawer). Camera is the increment-46 close-up.
+
+
 ## Scene format
 
 JSON object with `camera`, `lights`, `bodies`, optional `joints`, optional `triggers`, optional `raycasts`, optional `shapecasts`, and optional `impulses`.
@@ -1571,3 +1603,5 @@ Increment 43: `Joint::Distance` gains optional `break_force` (serde default 0 = 
 Increment 44: `Joint::Spring` (`type: "spring"`, world `anchor` + `rest_length` + `stiffness` + `damping`) maps to a Rapier `SpringJoint`; scene authors one tan `cork` hung from the gate; increment 43 stays cork-free and spring-free; increment 18-43 scene JSON unchanged (no `"spring"`, no `"cork"`); after 120 steps cork.y < 1.15 - 0.15 and |cork COM - current gate-top - 0.42| <= 0.12; dump records `kind: "spring"` plus `rest_length`/`stiffness`/`damping`; broken rope + fallen bob + courtyard stay; `increment44` writes scene + physics dump + our PNG.
 
 Increment 45: `Joint::Hinge` gains optional `motor_target_position` (radians, serde default none); increment-45 gate hinge keeps limits [0, 1.15] and motor_max_force 5.0 but replaces velocity 1.4 with target ~0.55; increment44_scene stays velocity-driven (1.4, no target) and its dump angle stays ~1.15; increment 18-44 scene JSON unchanged (no `motor_target_position`); after 120 steps gate angle is within 0.15 of 0.55 (not parked at 1.15); dump records `motor_target_position` on that hinge; courtyard (cork spring, broken rope + fallen bob, rider, platform, lid + fixed, impulses, drawer_probe, drawer_sweep) stays; `increment45` writes scene + physics dump + our PNG.
+
+Increment 46: increment46_scene clones increment45 and changes ONLY the camera (position `[1.85, 1.35, 3.15]`, look_at `[0.35, 0.42, 1.55]`, fov_y_deg 40) aimed at the gate / cork / fallen-bob cluster; increment45_scene keeps `[3.6, 2.35, 5.2]` look_at `[0.1, 0.38, 0]`; increment 18-45 scene JSON unchanged (old camera 3.6, not 1.85); still one `camera`, one `frame.png`, no `cameras[]`; physics same as 45 (gate angle within 0.15 of 0.55, cork spring, bob y < 0.22, broken_joints gate–bob); no new bodies / lights / joints / impulses; `increment46` writes scene + physics dump + our PNG.
