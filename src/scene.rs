@@ -72,6 +72,11 @@ pub struct Scene {
     /// Omitted when none so increment 18–62 JSON stay compact.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub win: Option<Win>,
+    /// Use-on-overlap while held. After snap_held / apply_drops, if
+    /// `by` overlaps `trigger` and dump.held includes `body`, stamp
+    /// dump.used. Omitted when empty so increment 18–64 JSON stay compact.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uses: Vec<UseEvent>,
     #[serde(skip, default)]
     pub mesh_search_dirs: Vec<PathBuf>,
 }
@@ -399,6 +404,15 @@ pub struct Transition {
 pub struct Win {
     pub kind: String,
     pub body: String,
+}
+
+/// Authorable use. When `by` overlaps `trigger` and dump.held
+/// includes `body`, stamp dump.used.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UseEvent {
+    pub body: String,
+    pub trigger: String,
+    pub by: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5438,6 +5452,7 @@ pub fn increment54_scene() -> Scene {
         }),
         transition: None,
         win: None,
+        uses: vec![],
         mesh_search_dirs: vec![],
     }
 }
@@ -5718,6 +5733,29 @@ pub fn increment64_scene() -> Scene {
         trigger: "exit".into(),
         by: "walker".into(),
         drop_offset: [0.22, -0.06, 0.0],
+    });
+    scene
+}
+
+pub fn increment65_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        serde_json::to_string_pretty(&increment65_scene()).expect("serialize increment65 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-63 lane plus an authorable use. Clones increment63_scene()
+/// (the win/carry path, NOT increment64's drop path) so hold / no-drops
+/// / transition courtyard / win cannot drift. ONLY adds
+/// `uses: [{ body: "token", trigger: "exit", by: "walker" }]`.
+/// increment63_scene() stays use-free. increment64_scene() stays drop + win.
+pub fn increment65_scene() -> Scene {
+    let mut scene = increment63_scene();
+    scene.uses.push(UseEvent {
+        body: "token".into(),
+        trigger: "exit".into(),
+        by: "walker".into(),
     });
     scene
 }

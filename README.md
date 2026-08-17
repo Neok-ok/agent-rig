@@ -1,4 +1,4 @@
-# agent-rig (increments 1–64)
+# agent-rig (increments 1–65)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1947,4 +1947,10 @@ Increment 64: dump.lost when the win body is not delivered. increment64_scene cl
 
 ```bash
 agent-rig increment64 --out artifacts/increment64
+```
+
+Increment 65: authorable use. increment65_scene clones increment63 (the win/carry path, NOT increment64's drop path) and ONLY adds `uses: [{ body: "token", trigger: "exit", by: "walker" }]`. increment63 stays use-free. increment64 stays drop + lost. increment 18–64 artifacts unchanged. After snap_held / apply_drops, if `by` overlaps `trigger` and dump.held includes `body`, stamp `dump.used = { body: token, trigger: exit, by: walker, at_step: 99 }`. Lane of increment65 fires at the exit step (same step as entered/exit and transition courtyard). Walker still holds the token through the exit, uses it there, then carries it into the courtyard and wins. Lane: scene=lane, steps ~100, stopped entered/exit@99, transition courtyard@99, held token@66, dropped omitted, won omitted, lost omitted, used token/exit/walker@99, token at walker+[0.16, 0.22, 0]. Next-physics: scene=courtyard, steps=1, HAS token AND bar, NO npc, token at walker+[0.16,0.22,0], held token@66, dump.won delivered, lost omitted, used omitted (use was on the lane). increment63 next-physics still won, no used, no lost. increment64 next-physics still lost, no used, no won, NO token. Frames identical to increment63 (lane 78667, courtyard 213277). Inspectable delta is dump.used. Three.js both.
+
+```bash
+agent-rig increment65 --out artifacts/increment65
 ```

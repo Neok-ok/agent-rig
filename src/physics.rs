@@ -87,6 +87,11 @@ pub struct PhysicsDump {
     /// Omitted when none so increment 18–63 dumps stay without a `lost` key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lost: Option<LostRecord>,
+    /// Stamped when an authored use fires (`by` overlaps `trigger`
+    /// while dump.held includes `body`). Omitted when empty so
+    /// increment 18–64 dumps stay without a `used` key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub used: Vec<UsedRecord>,
 }
 
 
@@ -121,6 +126,14 @@ pub struct LostRecord {
     pub kind: String,
     pub body: String,
     pub scene: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsedRecord {
+    pub body: String,
+    pub trigger: String,
+    pub by: String,
+    pub at_step: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -294,6 +307,7 @@ struct PhysicsWorld {
     held: Vec<HeldRecord>,
     holds: Vec<HeldBinding>,
     dropped: Vec<DroppedRecord>,
+    used: Vec<UsedRecord>,
     carried_ids: HashSet<String>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
@@ -334,6 +348,7 @@ impl PhysicsWorld {
             held: Vec::new(),
             holds: Vec::new(),
             dropped: Vec::new(),
+            used: Vec::new(),
             carried_ids: HashSet::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
@@ -676,6 +691,37 @@ impl PhysicsWorld {
                 by,
                 at_step: step,
             });
+        }
+    }
+
+    fn apply_uses(&mut self, scene: &Scene, step: u32) {
+        if scene.uses.is_empty() {
+            return;
+        }
+        let overlaps = self.snapshot_overlaps();
+        for u in &scene.uses {
+            if self
+                .used
+                .iter()
+                .any(|r| r.body == u.body && r.trigger == u.trigger && r.by == u.by)
+            {
+                continue;
+            }
+            let held = self.held.iter().any(|h| h.id == u.body);
+            if !held {
+                continue;
+            }
+            if overlaps
+                .iter()
+                .any(|o| o.trigger == u.trigger && o.body == u.by)
+            {
+                self.used.push(UsedRecord {
+                    body: u.body.clone(),
+                    trigger: u.trigger.clone(),
+                    by: u.by.clone(),
+                    at_step: step,
+                });
+            }
         }
     }
 
@@ -1614,6 +1660,7 @@ pub fn step_physics_with_carry(
         world.step();
         world.apply_pickups(scene, i)?;
         world.apply_drops(scene, i);
+        world.apply_uses(scene, i);
         ran = i + 1;
         if let Some(until) = &scene.play_until {
             if until.kind == "picked_up" {
@@ -1666,6 +1713,7 @@ pub fn step_physics_with_carry(
         picked_up: world.picked_up.clone(),
         held: world.held.clone(),
         dropped: world.dropped.clone(),
+        used: world.used.clone(),
         camera,
         stopped: stopped.clone(),
         scene: scene.id.clone(),
@@ -1758,6 +1806,7 @@ pub fn simulate_trajectory(
             world.step();
             world.apply_pickups(scene, step)?;
             world.apply_drops(scene, step);
+            world.apply_uses(scene, step);
             step += 1;
         }
         frames.push(world.snapshot_frame(i * frame_stride));
