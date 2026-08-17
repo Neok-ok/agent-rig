@@ -269,6 +269,20 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
       }
     }
   }
+  let occlusionTextureUrl = null;
+  let occlusionStrength = 1;
+  if (mat.occlusionTexture && gltf.textures && gltf.images) {
+    const tex = gltf.textures[mat.occlusionTexture.index];
+    if (tex && tex.source !== undefined) {
+      const img = gltf.images[tex.source];
+      if (img && img.uri) {
+        occlusionTextureUrl = img.uri.startsWith('data:')
+          ? img.uri
+          : new URL(img.uri, new URL(gltfUrl, location.href)).href;
+      }
+    }
+    if (mat.occlusionTexture.strength !== undefined) occlusionStrength = mat.occlusionTexture.strength;
+  }
   return {
     baseColorFactor: factor,
     metallicFactor: pbr.metallicFactor === undefined ? 1 : pbr.metallicFactor,
@@ -279,6 +293,8 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
     normalScale: mat.normalTexture && mat.normalTexture.scale !== undefined ? mat.normalTexture.scale : 1,
     emissiveFactor: mat.emissiveFactor || [0, 0, 0],
     emissiveTextureUrl,
+    occlusionTextureUrl,
+    occlusionStrength,
     alphaMode: mat.alphaMode || 'OPAQUE',
     opacity: factor.length > 3 ? factor[3] : 1,
     doubleSided: !!mat.doubleSided,
@@ -433,6 +449,21 @@ for (const body of spec.bodies) {
     mat.normalMap = nrm;
     if (THREE.Vector2) {
       mat.normalScale = new THREE.Vector2(gltfPbr.normalScale, gltfPbr.normalScale);
+    }
+    mat.needsUpdate = true;
+  }
+  if (gltfPbr && gltfPbr.occlusionTextureUrl) {
+    const ao = await loadTexture(gltfPbr.occlusionTextureUrl);
+    if ('NoColorSpace' in THREE) ao.colorSpace = THREE.NoColorSpace;
+    else if ('LinearSRGBColorSpace' in THREE) ao.colorSpace = THREE.LinearSRGBColorSpace;
+    ao.wrapS = THREE.RepeatWrapping;
+    ao.wrapT = THREE.RepeatWrapping;
+    ao.needsUpdate = true;
+    mat.aoMap = ao;
+    mat.aoMapIntensity = gltfPbr.occlusionStrength === undefined ? 1 : gltfPbr.occlusionStrength;
+    // MeshStandardMaterial.aoMap reads uv2.
+    if (geom.getAttribute('uv') && !geom.getAttribute('uv2')) {
+      geom.setAttribute('uv2', geom.getAttribute('uv'));
     }
     mat.needsUpdate = true;
   }

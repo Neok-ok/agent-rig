@@ -891,3 +891,11 @@ pub const INCREMENT18_SCENE_JSON: &str = r#"{
     }
   ]
 }"#;
+
+pub fn increment19_scene_json() -> &'static str {
+    INCREMENT18_SCENE_JSON
+}
+
+pub fn increment19_scene() -> Scene {
+    increment18_scene()
+}

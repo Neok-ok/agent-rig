@@ -40,6 +40,12 @@ pub struct GltfPbrMaterial {
     pub emissive_texture_path: Option<PathBuf>,
     /// Embedded emissive map bytes.
     pub emissive_texture_bytes: Option<Vec<u8>>,
+    /// Sidecar occlusion / AO map (glTF: R = occlusion, 0 = occluded, 1 = open).
+    pub occlusion_texture_path: Option<PathBuf>,
+    /// Embedded occlusion map bytes.
+    pub occlusion_texture_bytes: Option<Vec<u8>>,
+    /// glTF occlusionTexture.strength (default 1).
+    pub occlusion_strength: f32,
 }
 
 impl GltfPbrMaterial {
@@ -66,6 +72,10 @@ impl GltfPbrMaterial {
 
     pub fn has_emissive_texture(&self) -> bool {
         self.emissive_texture_path.is_some() || self.emissive_texture_bytes.is_some()
+    }
+
+    pub fn has_occlusion_texture(&self) -> bool {
+        self.occlusion_texture_path.is_some() || self.occlusion_texture_bytes.is_some()
     }
 
     pub fn alpha_factor(&self) -> f32 {
@@ -143,6 +153,28 @@ impl GltfPbrMaterial {
             z /= len;
         }
         Ok([x, y, z])
+    }
+
+    /// Sample AO from the R channel (glTF occlusionTexture). No texture → 1.0.
+    /// strength lerps toward 1: ao = 1 + strength * (R - 1).
+    pub fn sample_ao(&self, u: f32, v: f32) -> Result<f32, String> {
+        if !self.has_occlusion_texture() {
+            return Ok(1.0);
+        }
+        let img = if let Some(bytes) = &self.occlusion_texture_bytes {
+            image::load_from_memory(bytes)
+                .map_err(|e| format!("load occlusion bytes: {e}"))?
+                .to_rgb8()
+        } else if let Some(path) = &self.occlusion_texture_path {
+            image::open(path)
+                .map_err(|e| format!("load occlusion {path:?}: {e}"))?
+                .to_rgb8()
+        } else {
+            return Ok(1.0);
+        };
+        let (r, _g, _b) = sample_linear_rgb(&img, u, v);
+        let ao = 1.0 + self.occlusion_strength * (r - 1.0);
+        Ok(ao.clamp(0.0, 1.0))
     }
 
     /// Sample (metallic, roughness). Texture B/G win over scene-JSON constants;
@@ -829,6 +861,9 @@ fn parse_primitive_material(
     let mut emissive_factor = [0.0f32, 0.0, 0.0];
     let mut emissive_texture_path = None;
     let mut emissive_texture_bytes = None;
+    let mut occlusion_texture_path = None;
+    let mut occlusion_texture_bytes = None;
+    let mut occlusion_strength = 1.0f32;
     let alpha_mode = match mat
         .get("alphaMode")
         .and_then(|v| v.as_str())
@@ -904,6 +939,18 @@ fn parse_primitive_material(
         emissive_texture_path = path;
         emissive_texture_bytes = bytes;
     }
+    if let Some(tex) = mat.get("occlusionTexture") {
+        let tex_i = tex
+            .get("index")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| "occlusionTexture missing index".to_string())? as usize;
+        let (path, bytes) = load_gltf_image(root, tex_i, base_dir, buffers)?;
+        occlusion_texture_path = path;
+        occlusion_texture_bytes = bytes;
+        if let Some(n) = tex.get("strength").and_then(|v| v.as_f64()) {
+            occlusion_strength = n as f32;
+        }
+    }
     Ok(Some(GltfPbrMaterial {
         base_color_factor,
         metallic_factor,
@@ -920,6 +967,9 @@ fn parse_primitive_material(
         emissive_factor,
         emissive_texture_path,
         emissive_texture_bytes,
+        occlusion_texture_path,
+        occlusion_texture_bytes,
+        occlusion_strength,
     }))
 }
 

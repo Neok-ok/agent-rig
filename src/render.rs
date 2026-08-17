@@ -149,6 +149,8 @@ struct Prim {
     normal_scale: f32,
     emissive_factor: V3,
     emissive_map: Option<AlbedoMap>,
+    ao_map: Option<MrMap>,
+    ao_strength: f32,
     alpha: f32,
     alpha_mode: GltfAlphaMode,
     alpha_cutoff: f32,
@@ -463,6 +465,7 @@ struct Hit {
     roughness: f32,
     metallic: f32,
     emissive: V3,
+    ao: f32,
     alpha: f32,
     alpha_mode: GltfAlphaMode,
     alpha_cutoff: f32,
@@ -484,6 +487,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         let mut normal_scale = 1.0f32;
         let mut emissive_factor = V3::new(0.0, 0.0, 0.0);
         let mut emissive_map = None;
+        let mut ao_map = None;
+        let mut ao_strength = 1.0f32;
         let mut alpha = 1.0f32;
         let mut alpha_mode = GltfAlphaMode::Opaque;
         let mut alpha_cutoff = 0.5f32;
@@ -553,6 +558,18 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
                         emissive_map = Some(AlbedoMap::load(tex_path).unwrap_or_else(|e| {
                             panic!("gltf emissiveTexture {tex_path:?}: {e}")
                         }));
+                    }
+                    if let Some(bytes) = &gm.occlusion_texture_bytes {
+                        ao_map = Some(
+                            MrMap::load_from_bytes(bytes)
+                                .unwrap_or_else(|e| panic!("gltf occlusionTexture: {e}")),
+                        );
+                        ao_strength = gm.occlusion_strength;
+                    } else if let Some(tex_path) = &gm.occlusion_texture_path {
+                        ao_map = Some(MrMap::load(tex_path).unwrap_or_else(|e| {
+                            panic!("gltf occlusionTexture {tex_path:?}: {e}")
+                        }));
+                        ao_strength = gm.occlusion_strength;
                     }
                 }
                 let rot = Quat::from_wxyz(b.rotation_wxyz);
@@ -624,6 +641,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             normal_scale,
             emissive_factor,
             emissive_map,
+            ao_map,
+            ao_strength,
             alpha,
             alpha_mode,
             alpha_cutoff,
@@ -1061,6 +1080,13 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         (Some(map), Some([u, v])) => map.sample(u, v).hadamard(prim.emissive_factor),
         _ => prim.emissive_factor,
     };
+    let ao = match (&prim.ao_map, uv) {
+        (Some(map), Some([u, v])) => {
+            let r = map.sample(u, v).x;
+            (1.0 + prim.ao_strength * (r - 1.0)).clamp(0.0, 1.0)
+        }
+        _ => 1.0,
+    };
     let tex_a = match (&prim.albedo_map, uv) {
         (Some(map), Some([u, v])) => map.sample_alpha(u, v),
         _ => 1.0,
@@ -1074,6 +1100,7 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         roughness,
         metallic,
         emissive,
+        ao,
         alpha,
         alpha_mode: prim.alpha_mode,
         alpha_cutoff: prim.alpha_cutoff,
@@ -1090,7 +1117,9 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
     let n_dot_v = n.dot(v).max(1e-4);
     let f0 = V3::new(0.04, 0.04, 0.04).mul(1.0 - h.metallic).add(h.albedo.mul(h.metallic));
 
-    let ao = contact_ao(h.p, n, prims);
+    let contact = contact_ao(h.p, n, prims);
+    let tex_ao = h.ao.clamp(0.0, 1.0);
+    let ao = (contact * tex_ao).clamp(0.0, 1.0);
 
     // Diffuse IBL: SH fill + explicit sky/ground by N.y so the ball Y-gradient stays readable.
     let ir_sh = sh_irradiance(env, n);
@@ -1106,7 +1135,8 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
     let r = n.mul(2.0 * n_dot_v).sub(v).norm();
     let spec_env = env_specular(r, n, h.roughness);
     let spec_brdf = env_brdf(n_dot_v, h.roughness, f0);
-    let spec_ao = 0.25 + 0.75 * ao;
+    // Contact AO keeps the 0.25 floor; sampled texture AO multiplies the whole IBL spec.
+    let spec_ao = (0.25 + 0.75 * contact) * tex_ao;
     // Stronger split-sum + a little raw env sheen so horizon/sky actually paints on terracotta.
     let specular_ibl = spec_env
         .hadamard(spec_brdf)
