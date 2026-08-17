@@ -2,7 +2,7 @@ use rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::scene::{Joint, MeshCollider, Scene, Shape, Trigger};
+use crate::scene::{Joint, MeshCollider, RayHit, Scene, Shape, Trigger};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhysicsDump {
@@ -16,6 +16,9 @@ pub struct PhysicsDump {
     /// Sensor overlaps after the last step. Empty when the scene has no triggers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overlaps: Vec<PhysicsOverlap>,
+    /// Authored-ray hits after the last step. Misses are omitted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ray_hits: Vec<RayHit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -536,6 +539,44 @@ impl PhysicsWorld {
         overlaps
     }
 
+    fn snapshot_ray_hits(&self, scene: &Scene) -> Vec<RayHit> {
+        let mut hits = Vec::new();
+        for ray in &scene.raycasts {
+            let dir = vector![ray.direction[0], ray.direction[1], ray.direction[2]];
+            let len = dir.norm();
+            if len < 1e-6 {
+                continue;
+            }
+            let dir = dir / len;
+            let origin = point![ray.origin[0], ray.origin[1], ray.origin[2]];
+            let r = Ray::new(origin, dir);
+            let filter = QueryFilter::default().exclude_sensors();
+            let Some((handle, intersection)) = self.query_pipeline.cast_ray_and_get_normal(
+                &self.rigid_body_set,
+                &self.collider_set,
+                &r,
+                ray.max_toi,
+                true,
+                filter,
+            ) else {
+                continue;
+            };
+            let Some(body) = self.collider_to_id.get(&handle) else {
+                continue;
+            };
+            let pt = r.point_at(intersection.time_of_impact);
+            let n = intersection.normal;
+            hits.push(RayHit {
+                ray: ray.id.clone(),
+                body: body.clone(),
+                point: [pt.x, pt.y, pt.z],
+                normal: [n.x, n.y, n.z],
+                toi: intersection.time_of_impact,
+            });
+        }
+        hits
+    }
+
     fn snapshot_frame(&self, step: u32) -> TrajectoryFrame {
         TrajectoryFrame {
             step,
@@ -558,6 +599,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         contacts: world.snapshot_contacts(),
         joints: world.authored_joints.clone(),
         overlaps: world.snapshot_overlaps(),
+        ray_hits: world.snapshot_ray_hits(scene),
     })
 }
 

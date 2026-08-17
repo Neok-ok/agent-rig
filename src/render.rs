@@ -786,46 +786,128 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         };
         let half = V3::new(size[0] * 0.5, size[1] * 0.5, size[2] * 0.5);
         let center = V3::from_arr(trigger.position);
-        prims.push(Prim {
-            kind: trigger_box_shell(center, half),
+        prims.push(debug_prim(
+            trigger_box_shell(center, half),
             center,
-            rotation: Quat::from_wxyz([1.0, 0.0, 0.0, 0.0]),
-            albedo: V3::new(0.15, 0.85, 0.95),
-            roughness: 0.35,
-            metallic: 0.0,
-            albedo_map: None,
-            mr_map: None,
-            normal_map: None,
-            normal_scale: 1.0,
-            emissive_factor: V3::new(0.0, 0.0, 0.0),
-            emissive_map: None,
-            ao_map: None,
-            ao_strength: 1.0,
-            alpha: 0.18,
-            alpha_mode: GltfAlphaMode::Blend,
-            alpha_cutoff: 0.5,
-            transmission: 0.0,
-            ior: 1.5,
-            attenuation_color: V3::new(1.0, 1.0, 1.0),
-            attenuation_distance: f32::INFINITY,
-            thickness: 0.0,
-            clearcoat: 0.0,
-            clearcoat_roughness: 0.0,
-            sheen: 0.0,
-            sheen_roughness: 0.5,
-            sheen_color: V3::new(1.0, 1.0, 1.0),
-            anisotropy: 0.0,
-            anisotropy_rotation: 0.0,
-            iridescence: 0.0,
-            iridescence_ior: 1.3,
-            iridescence_thickness: 400.0,
-            dispersion: 0.0,
-            body_index: usize::MAX,
-            emissive_intensity: 0.0,
-        });
+            Quat::from_wxyz([1.0, 0.0, 0.0, 0.0]),
+            V3::new(0.15, 0.85, 0.95),
+            V3::new(0.0, 0.0, 0.0),
+            0.18,
+            GltfAlphaMode::Blend,
+        ));
+    }
+
+    // Authored physics rays: thin magenta segment (origin to hit, or
+    // origin+dir*max_toi on a miss) plus a yellow hit marker. Hits come
+    // from the dump (copied onto the scene); this is debug draw, not a
+    // renderer-side physics raycast.
+    for ray in &scene.raycasts {
+        let origin = V3::from_arr(ray.origin);
+        let dir = V3::from_arr(ray.direction).norm();
+        let hit = scene.ray_hits.iter().find(|h| h.ray == ray.id);
+        let end = if let Some(h) = hit {
+            V3::from_arr(h.point)
+        } else {
+            origin.add(dir.mul(ray.max_toi))
+        };
+        let delta = end.sub(origin);
+        let length = delta.len();
+        if length > 1e-5 {
+            let center = origin.add(end).mul(0.5);
+            let rot = quat_from_to(V3::new(0.0, 0.0, 1.0), delta.norm());
+            prims.push(debug_prim(
+                PrimKind::Box {
+                    half: V3::new(0.045, 0.045, length * 0.5),
+                },
+                center,
+                rot,
+                V3::new(1.0, 0.15, 0.95),
+                V3::new(10.0, 0.6, 9.0),
+                1.0,
+                GltfAlphaMode::Opaque,
+            ));
+        }
+        if let Some(h) = hit {
+            prims.push(debug_prim(
+                PrimKind::Sphere { radius: 0.07 },
+                V3::from_arr(h.point),
+                Quat::from_wxyz([1.0, 0.0, 0.0, 0.0]),
+                V3::new(1.0, 0.92, 0.15),
+                V3::new(10.0, 8.5, 0.4),
+                1.0,
+                GltfAlphaMode::Opaque,
+            ));
+        }
     }
 
     prims
+}
+
+fn quat_from_to(from: V3, to: V3) -> Quat {
+    let from = from.norm();
+    let to = to.norm();
+    let c = from.dot(to);
+    if c > 0.999999 {
+        return Quat::from_wxyz([1.0, 0.0, 0.0, 0.0]);
+    }
+    if c < -0.999999 {
+        let axis = if from.x.abs() < 0.9 {
+            from.cross(V3::new(1.0, 0.0, 0.0)).norm()
+        } else {
+            from.cross(V3::new(0.0, 1.0, 0.0)).norm()
+        };
+        return Quat::from_wxyz([0.0, axis.x, axis.y, axis.z]);
+    }
+    let axis = from.cross(to);
+    Quat::from_wxyz([1.0 + c, axis.x, axis.y, axis.z])
+}
+
+fn debug_prim(
+    kind: PrimKind,
+    center: V3,
+    rotation: Quat,
+    albedo: V3,
+    emissive: V3,
+    alpha: f32,
+    alpha_mode: GltfAlphaMode,
+) -> Prim {
+    Prim {
+        kind,
+        center,
+        rotation,
+        albedo,
+        roughness: 0.35,
+        metallic: 0.0,
+        albedo_map: None,
+        mr_map: None,
+        normal_map: None,
+        normal_scale: 1.0,
+        emissive_factor: emissive,
+        emissive_map: None,
+        ao_map: None,
+        ao_strength: 1.0,
+        alpha,
+        alpha_mode,
+        alpha_cutoff: 0.5,
+        transmission: 0.0,
+        ior: 1.5,
+        attenuation_color: V3::new(1.0, 1.0, 1.0),
+        attenuation_distance: f32::INFINITY,
+        thickness: 0.0,
+        clearcoat: 0.0,
+        clearcoat_roughness: 0.0,
+        sheen: 0.0,
+        sheen_roughness: 0.5,
+        sheen_color: V3::new(1.0, 1.0, 1.0),
+        anisotropy: 0.0,
+        anisotropy_rotation: 0.0,
+        iridescence: 0.0,
+        iridescence_ior: 1.3,
+        iridescence_thickness: 400.0,
+        dispersion: 0.0,
+        body_index: usize::MAX,
+        emissive_intensity: 0.0,
+    }
 }
 
 fn surface_blocks_shadow(h: &Hit) -> bool {

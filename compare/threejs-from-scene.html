@@ -32,12 +32,14 @@ const trajectoryUrl = params.get('trajectory');
 
 const spec = await (await fetch(sceneUrl)).json();
 let poses = {};
+let dump = {};
 function applyBodies(list) {
   for (const b of list || []) poses[b.id] = b;
 }
 try {
   if (trajectoryUrl) {
     const traj = await (await fetch(trajectoryUrl)).json();
+    dump = traj;
     const frames = traj.frames || [];
     let idx = frames.length - 1;
     if (params.has('frame')) idx = parseInt(params.get('frame'), 10);
@@ -45,6 +47,7 @@ try {
     if (frames[idx]) applyBodies(frames[idx].bodies);
   } else {
     const phys = await (await fetch(physicsUrl)).json();
+    dump = phys;
     if (phys.frames && phys.frames.length) {
       applyBodies(phys.frames[phys.frames.length - 1].bodies);
     } else {
@@ -617,6 +620,35 @@ for (const trigger of spec.triggers || []) {
   mesh.castShadow = false;
   mesh.receiveShadow = false;
   scene.add(mesh);
+}
+
+// Authored physics rays: debug lines from dump hits. Three.js does not raycast.
+const rayHits = {};
+for (const h of (dump.ray_hits || [])) {
+  if (h && h.ray) rayHits[h.ray] = h;
+}
+for (const ray of (spec.raycasts || [])) {
+  const o = ray.origin || [0, 0, 0];
+  const d = ray.direction || [0, -1, 0];
+  const maxToi = ray.max_toi === undefined ? 1 : ray.max_toi;
+  const hit = rayHits[ray.id];
+  const end = (hit && hit.point)
+    ? hit.point
+    : [o[0] + d[0] * maxToi, o[1] + d[1] * maxToi, o[2] + d[2] * maxToi];
+  const geom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(o[0], o[1], o[2]),
+    new THREE.Vector3(end[0], end[1], end[2]),
+  ]);
+  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0xff26f2 }));
+  scene.add(line);
+  if (hit && hit.point) {
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.05, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffee26 }),
+    );
+    marker.position.fromArray(hit.point);
+    scene.add(marker);
+  }
 }
 
 document.body.appendChild(renderer.domElement);

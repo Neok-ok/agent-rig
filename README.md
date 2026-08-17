@@ -1110,9 +1110,40 @@ cd /workspace/agent-rig && ./scripts/increment34-threejs.sh
 
 Writes `artifacts/increment34/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, lantern emissive, no env map, no tonemap, 800x450). Joints are ignored by Three.js; bodies still use our post-step dump poses (closed drawer).
 
+## Increment 35
+
+Same courtyard as increment 34 (bowl + rock + gold ball with clearcoat / anisotropy / iridescence, copper pillar with AO, glass pane with transmission + IOR + volume + dispersion, crate, sheen bench, hanging lantern + hinge motor 4/8, drawer + slider motor -2/6, charm + ball socket, drawer-open trigger, emissive lantern 16, directional + area light). The scene authors one physics ray `drawer_probe` from near `[-0.35, 0.55, 1.35]` toward the seated drawer COM `[-0.35, 0.10, 1.02]` (`max_toi` ~2). After stepping, the dump records a hit on the closed drawer (sensors/triggers are skipped so they do not steal the hit). Misses are omitted. The renderer draws a thin magenta segment from origin to hit plus a yellow hit marker. Three.js draws the same debug lines from the dump; it does not perform the physics raycast. No new bodies, joints, or lights. `increment34_scene()` stays raycast-free.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment35.sh
+```
+
+Writes:
+
+- `artifacts/increment35/scene.json` — increment-34 courtyard plus `drawer_probe`
+- `artifacts/increment35/physics.json` — post-step dump (poses, contacts, collider kinds, joints, overlaps, `ray_hits`)
+- `artifacts/increment35/frame.png` — our renderer, 800x450, courtyard plus the probe segment hitting the closed drawer
+- `artifacts/increment35/threejs-frame.png` — stock Three.js, same pose (`MeshPhysicalMaterial`, no env map, no tonemap); debug line from dump points
+
+### CLI
+
+```bash
+agent-rig increment35 --out artifacts/increment35
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment35-threejs.sh
+```
+
+Writes `artifacts/increment35/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, lantern emissive, no env map, no tonemap, 800x450). Three.js draws the authored ray from dump `ray_hits`; it does not raycast. Bodies still use our post-step dump poses (closed drawer).
+
 ## Scene format
 
-JSON object with `camera`, `lights`, `bodies`, optional `joints`, and optional `triggers`.
+JSON object with `camera`, `lights`, `bodies`, optional `joints`, optional `triggers`, and optional `raycasts`.
 
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`; or `type: "area"` with `position`, `size` `[width, height]`, `color`, `intensity`, optional `normal` (default `[0,-1,0]`). Area softness comes from the authored `size`.
@@ -1196,3 +1227,5 @@ Increment 32: courtyard plus one authorable trigger / sensor volume at the open-
 Increment 33: existing lantern authors `emissive ≈ [1.0, 0.55, 0.12]` and `emissive_intensity ≈ 16`; increment 32 lantern stays dark (intensity 0); increment 18–32 scene JSON unchanged (no lantern emissive_intensity 16); courtyard + drawer_open trigger stay; dump records the overlap plus ball + hinge motor + slider; pillar `convex_hull` + ground–pillar contacts stay; no extra `lights[]` entries vs increment 32; `increment33` writes scene + physics dump + our PNG.
 
 Increment 34: existing crate–drawer slider authors `motor_target_velocity ≈ -2` and `motor_max_force ≈ 6`; increment 33 slider stays 0 / no motor fields; increment 18–33 scene JSON unchanged; after stepping drawer COM z < 1.15 (closed vs increment 33's ~1.375); dump records slider motor fields plus hinge motor 4/8 + ball; trigger stays authored (overlap may be empty); pillar `convex_hull` + ground–pillar contacts stay; courtyard (emissive lantern 16, trigger, charm + ball, crate, sheen bench, gold clearcoat+anisotropy+iridescence, volume+dispersion pane, area light, AO) stays; `increment34` writes scene + physics dump + our PNG.
+
+Increment 35: scene authors one ray `drawer_probe`; increment 34 stays raycast-free; increment 18-34 scene JSON unchanged; dump records a hit on the drawer; courtyard + motors stay; `increment35` writes scene + physics dump + our PNG.
