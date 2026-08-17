@@ -449,7 +449,11 @@ for (const body of spec.bodies) {
   const iridescenceThickness = (body.material && body.material.iridescence_thickness);
   const hasVolume = !!(gltfPbr && gltfPbr.attenuationDistance !== undefined && Number.isFinite(gltfPbr.attenuationDistance));
   const dispersion = (gltfPbr && gltfPbr.dispersion) || (body.material && body.material.dispersion) || 0;
-  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0) || clearcoat > 0 || sheen > 0 || hasVolume || anisotropy > 0 || iridescence > 0 || dispersion > 0;
+  const bodyEmissive = (body.material && body.material.emissive) || [0, 0, 0];
+  const bodyEmissiveIntensity = body.material && body.material.emissive_intensity;
+  const hasBodyEmissive = (bodyEmissive[0] + bodyEmissive[1] + bodyEmissive[2]) > 0
+    || (bodyEmissiveIntensity !== undefined && bodyEmissiveIntensity !== null && bodyEmissiveIntensity > 0);
+  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0) || clearcoat > 0 || sheen > 0 || hasVolume || anisotropy > 0 || iridescence > 0 || dispersion > 0 || hasBodyEmissive;
   const MatClass = usePhysical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
   const mat = new MatClass({
     color: new THREE.Color(albedo[0], albedo[1], albedo[2]),
@@ -566,6 +570,13 @@ for (const body of spec.bodies) {
       em.needsUpdate = true;
       mat.emissiveMap = em;
     }
+    mat.needsUpdate = true;
+  }
+  if (hasBodyEmissive) {
+    mat.emissive = new THREE.Color(bodyEmissive[0], bodyEmissive[1], bodyEmissive[2]);
+    mat.emissiveIntensity = (bodyEmissiveIntensity !== undefined && bodyEmissiveIntensity !== null)
+      ? bodyEmissiveIntensity
+      : 1;
     mat.needsUpdate = true;
   }
   if (gltfPbr && (gltfPbr.alphaMode === 'BLEND' || (gltfPbr.opacity !== undefined && gltfPbr.opacity < 1))) {

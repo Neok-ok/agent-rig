@@ -170,6 +170,8 @@ struct Prim {
     iridescence_ior: f32,
     iridescence_thickness: f32,
     dispersion: f32,
+    body_index: usize,
+    emissive_intensity: f32,
 }
 
 struct AlbedoMap {
@@ -501,6 +503,7 @@ struct Hit {
     iridescence_ior: f32,
     iridescence_thickness: f32,
     dispersion: f32,
+    body_index: usize,
 }
 
 /// Order-2 SH of the procedural HDR environment (y-up).
@@ -727,6 +730,13 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
                 }
             }
         };
+        let emissive_intensity = b.material.emissive_intensity;
+        // Intensity > 0: authored mesh-light / self-glow (emissive × intensity).
+        // Intensity == 0: keep increment-16 glTF emissiveFactor × emissiveTexture.
+        if emissive_intensity > 0.0 {
+            emissive_factor = V3::from_arr(b.material.emissive).mul(emissive_intensity);
+            emissive_map = None;
+        }
         prims.push(Prim {
             kind,
             center: V3::from_arr(b.position),
@@ -761,6 +771,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             iridescence_ior,
             iridescence_thickness,
             dispersion,
+            body_index: prims.len(),
+            emissive_intensity,
         });
     }
 
@@ -808,6 +820,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             iridescence_ior: 1.3,
             iridescence_thickness: 400.0,
             dispersion: 0.0,
+            body_index: usize::MAX,
+            emissive_intensity: 0.0,
         });
     }
 
@@ -824,11 +838,19 @@ fn surface_blocks_shadow(h: &Hit) -> bool {
 }
 
 fn shadow_occluded(orig: V3, dir: V3, prims: &[Prim], tmax: f32) -> bool {
+    shadow_occluded_skip(orig, dir, prims, tmax, usize::MAX)
+}
+
+fn shadow_occluded_skip(orig: V3, dir: V3, prims: &[Prim], tmax: f32, skip: usize) -> bool {
     let mut tmin = EPS;
     loop {
         match closest_hit(orig, dir, prims, tmin, tmax) {
             None => return false,
             Some(h) => {
+                if h.body_index == skip {
+                    tmin = h.t + EPS;
+                    continue;
+                }
                 if surface_blocks_shadow(&h) {
                     return true;
                 }
@@ -1354,6 +1376,7 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         iridescence_ior: prim.iridescence_ior,
         iridescence_thickness: prim.iridescence_thickness,
         dispersion: prim.dispersion,
+        body_index: prim.body_index,
     }
 }
 
@@ -1782,7 +1805,69 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
             }
         }
     }
+    // Mesh lights: bodies with emissive_intensity > 0 act as a point light at
+    // their post-step COM. Not pushed into scene.lights. Skip the emitter
+    // itself (self-glow is the emissive add below) and skip it in shadows
+    // so the lantern sphere does not umbra the courtyard.
+    for prim in prims {
+        if prim.emissive_intensity <= 0.0 {
+            continue;
+        }
+        if prim.body_index == h.body_index {
+            continue;
+        }
+        let to_l = prim.center.sub(h.p);
+        let dist = to_l.len().max(1e-3);
+        let l = to_l.mul(1.0 / dist);
+        let n_dot_l = n.dot(l).max(0.0);
+        if n_dot_l <= 0.0 {
+            continue;
+        }
+        let shadow_orig = h.p.add(n.mul(EPS * 4.0));
+        if shadow_occluded_skip(shadow_orig, l, prims, dist, prim.body_index) {
+            continue;
+        }
+        let atten = 1.0 / (dist * dist + 1e-4);
+        // emissive_factor is already emissive × intensity when intensity > 0.
+        let radiance = prim.emissive_factor.mul(atten);
+        color = color.add(base_specular(
+            h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
+            tan_aniso, bit_aniso, h.anisotropy,
+            h.iridescence, h.iridescence_ior, h.iridescence_thickness,
+        ));
+        if h.clearcoat > 1e-4 {
+            color = color.add(clearcoat_specular(
+                h.clearcoat_roughness.clamp(0.04, 1.0),
+                n,
+                v,
+                l,
+                n_dot_l,
+                radiance,
+                h.clearcoat,
+                tan_aniso,
+                bit_aniso,
+                h.anisotropy,
+                h.iridescence,
+                h.iridescence_ior,
+                h.iridescence_thickness,
+            ));
+        }
+        if h.sheen > 1e-4 {
+            color = color.add(sheen_lobe(
+                h.sheen_color,
+                h.sheen_roughness.clamp(0.04, 1.0),
+                n,
+                v,
+                l,
+                n_dot_l,
+                radiance,
+                h.sheen,
+            ));
+        }
+    }
     // Self-illumination: sampled emissive added after lighting, not a new light.
+    // Intensity > 0: authored emissive × intensity. Intensity 0: increment-16
+    // emissiveFactor × emissiveTexture (unscaled).
     color.add(h.emissive)
 }
 
