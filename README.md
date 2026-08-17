@@ -1,4 +1,4 @@
-# agent-rig (increments 1–63)
+# agent-rig (increments 1–64)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1937,8 +1937,14 @@ agent-rig increment62 --out artifacts/increment62
 agent-rig sim --scene courtyard --carry artifacts/increment62/physics.json
 ```
 
-Increment 63: authorable win. increment63_scene clones increment62 and ONLY sets `win: { kind: "delivered", body: "token" }`. increment62 stays won-free (no `win` key). increment 18–62 scene JSON stay compact. Lane dump: `scene=lane`, steps ~100, token held at walker + hold_offset `[0.16, 0.22, 0.00]`, `dump.held` token@66, transition courtyard; lane dump omits `won`. After the courtyard carry, if `dump.held` includes `win.body`, next-physics stamps `dump.won = { kind: delivered, body: token, scene: courtyard }`. increment62 next-physics stays without a `won` key. Same visuals as 62 (gold token ON the walker, then courtyard with token + yellow bar). Inspectable delta is `dump.won`. Three.js both. No increment 64.
+Increment 63: authorable win. increment63_scene clones increment62 and ONLY sets `win: { kind: "delivered", body: "token" }`. increment62 stays won-free (no `win` key). increment 18–62 scene JSON stay compact. Lane dump: `scene=lane`, steps ~100, token held at walker + hold_offset `[0.16, 0.22, 0.00]`, `dump.held` token@66, transition courtyard; lane dump omits `won`. After the courtyard carry, if `dump.held` includes `win.body`, next-physics stamps `dump.won = { kind: delivered, body: token, scene: courtyard }`. increment62 next-physics stays without a `won` key. Same visuals as 62 (gold token ON the walker, then courtyard with token + yellow bar). Inspectable delta is `dump.won`. Three.js both.
 
 ```bash
 agent-rig increment63 --out artifacts/increment63
+```
+
+Increment 64: dump.lost when the win body is not delivered. increment64_scene clones increment63 and ONLY restores the increment61 drop (`{ body: token, trigger: exit, by: walker, drop_offset: [0.22, -0.06, 0.0] }`). increment63 stays no-drop + win. increment 18–63 artifacts unchanged. After destination carry, if win is Some and dump.held does NOT include win.body, stamp `dump.lost = { kind: empty_handed, body: token, scene: courtyard }`. If held includes win.body, dump.won as today. Never both. Lane dumps omit won and lost. Lane: scene=lane, steps ~100, stopped entered/exit@99, transition courtyard@99, held token@66, dropped token@99, token at walker+[0.22, -0.06, 0]. Next-physics: scene=courtyard, steps ~31 (no carry inject), NO token, HAS bar, NO npc, held omitted, won omitted, dump.lost empty_handed. increment63 next-physics still won, no lost, HAS token. increment61 next-physics still no lost/won. Frames match increment61 (lane ~77428, courtyard ~278464). Inspectable delta vs 63 is dump.lost + courtyard without token. Three.js both.
+
+```bash
+agent-rig increment64 --out artifacts/increment64
 ```

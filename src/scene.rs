@@ -5698,3 +5698,27 @@ pub fn increment63_scene() -> Scene {
     });
     scene
 }
+
+pub fn increment64_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        serde_json::to_string_pretty(&increment64_scene()).expect("serialize increment64 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-63 lane plus the increment61 drop. Clones increment63_scene()
+/// so win / transition courtyard / npc / hold cannot drift.
+/// ONLY restores the increment61 drop.
+/// increment63_scene() stays no-drop + win.
+pub fn increment64_scene() -> Scene {
+    let mut scene = increment63_scene();
+    scene.drops.push(DropEvent {
+        body: "token".into(),
+        trigger: "exit".into(),
+        by: "walker".into(),
+        drop_offset: [0.22, -0.06, 0.0],
+    });
+    scene
+}
+

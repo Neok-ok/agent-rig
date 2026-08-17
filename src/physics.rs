@@ -82,6 +82,11 @@ pub struct PhysicsDump {
     /// Omitted when none so increment 18–62 dumps stay without a `won` key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub won: Option<WonRecord>,
+    /// Stamped after a carry into the destination when the source
+    /// scene authors a win and dump.held does NOT include win.body.
+    /// Omitted when none so increment 18–63 dumps stay without a `lost` key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lost: Option<LostRecord>,
 }
 
 
@@ -106,6 +111,13 @@ pub struct TransitionRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WonRecord {
+    pub kind: String,
+    pub body: String,
+    pub scene: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LostRecord {
     pub kind: String,
     pub body: String,
     pub scene: String,
@@ -687,6 +699,9 @@ impl PhysicsWorld {
             })
             .unwrap_or([0.0, 0.0, 0.0]);
         for rec in &carry.held {
+            if carry.dropped.iter().any(|d| d.id == rec.id) {
+                continue;
+            }
             let _carry_body = carry
                 .bodies
                 .iter()
@@ -1661,13 +1676,15 @@ pub fn step_physics_with_carry(
             }),
             _ => None,
         },
-        // Lane runs omit won even when the source scene authors win.
+        // Lane runs omit won/lost even when the source scene authors win.
         // Stamp after a carry into the destination (see apply_win).
         won: None,
+        lost: None,
     })
 }
 
 /// Stamp dump.won when `win` is Some and dump.held includes win.body.
+/// Otherwise stamp dump.lost empty_handed. Never both.
 /// The win spec travels with the source scene / carry, not the
 /// destination catalog scene (courtyard has no win field).
 pub fn apply_win(dump: &mut PhysicsDump, win: Option<&crate::scene::Win>) {
@@ -1680,6 +1697,14 @@ pub fn apply_win(dump: &mut PhysicsDump, win: Option<&crate::scene::Win>) {
             body: win.body.clone(),
             scene: dump.scene.clone(),
         });
+        dump.lost = None;
+    } else {
+        dump.lost = Some(LostRecord {
+            kind: "empty_handed".into(),
+            body: win.body.clone(),
+            scene: dump.scene.clone(),
+        });
+        dump.won = None;
     }
 }
 

@@ -1,11 +1,11 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–63).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–64).
 
 mod mesh;
 mod physics;
 mod render;
 mod scene;
 
-pub use physics::{simulate_trajectory, step_physics, step_physics_with_carry, step_catalog_scene, step_catalog_scene_with_carry, apply_win, BrokenJoint, ContactEvent, ControllerState, DespawnRecord, DumpCamera, DroppedRecord, HeldRecord, PhysicsBodyState, PhysicsContact, PhysicsDump, PhysicsOverlap, PhysicsJoint, PickupRecord, SpawnRecord, StoppedRecord, Trajectory, TrajectoryFrame, TransitionRecord, WonRecord};
+pub use physics::{simulate_trajectory, step_physics, step_physics_with_carry, step_catalog_scene, step_catalog_scene_with_carry, apply_win, BrokenJoint, ContactEvent, ControllerState, DespawnRecord, DumpCamera, DroppedRecord, HeldRecord, PhysicsBodyState, PhysicsContact, PhysicsDump, PhysicsOverlap, PhysicsJoint, PickupRecord, SpawnRecord, StoppedRecord, Trajectory, TrajectoryFrame, TransitionRecord, WonRecord, LostRecord};
 pub use render::{area_light_visibility, point_light_occluded, render_scene, render_scene_to_png, FRAME_HEIGHT, FRAME_WIDTH};
 pub use mesh::{
     apply_tbn, load_gltf, load_mesh, load_obj, parse_obj, tbn_from_positions_uvs, GltfAlphaMode,
@@ -14,7 +14,7 @@ pub use mesh::{
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
     increment3_scene_json, increment4_scene, increment4_scene_json, increment5_scene,
-    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, increment16_scene, increment16_scene_json, increment17_scene, increment17_scene_json, increment18_scene, increment18_scene_json, increment19_scene, increment19_scene_json, increment20_scene, increment20_scene_json, increment21_scene, increment21_scene_json, increment22_scene, increment22_scene_json, increment23_scene, increment23_scene_json, increment24_scene, increment24_scene_json, increment25_scene, increment25_scene_json, increment26_scene, increment26_scene_json, increment27_scene, increment27_scene_json, increment28_scene, increment28_scene_json, increment29_scene, increment29_scene_json, increment30_scene, increment30_scene_json, increment31_scene, increment31_scene_json, increment32_scene, increment32_scene_json, increment33_scene, increment33_scene_json, increment34_scene, increment34_scene_json, increment35_scene, increment35_scene_json, increment36_scene, increment36_scene_json, increment37_scene, increment37_scene_json, increment38_scene, increment38_scene_json, increment39_scene, increment39_scene_json, increment40_scene, increment40_scene_json, increment41_scene, increment41_scene_json, increment42_scene, increment42_scene_json, increment43_scene, increment43_scene_json, increment44_scene, increment44_scene_json, increment45_scene, increment45_scene_json, increment46_scene, increment46_scene_json, increment47_scene, increment47_scene_json, increment48_scene, increment48_scene_json, increment49_scene, increment49_scene_json, increment50_scene, increment50_scene_json, increment51_scene, increment51_scene_json, increment52_scene, increment52_scene_json, increment53_scene, increment53_scene_json, increment54_scene, increment54_scene_json, increment55_scene, increment55_scene_json, increment56_scene, increment56_scene_json, increment57_scene, increment57_scene_json, increment58_scene, increment58_scene_json, increment59_scene, increment59_scene_json, increment60_scene, increment60_scene_json, increment61_scene, increment61_scene_json, increment62_scene, increment62_scene_json, increment63_scene, increment63_scene_json, scene_catalog, catalog_ids, scene_by_id, parse_scene, Body, Camera, CameraFollow, CharacterController, CollisionGroups, DespawnEvent, DropEvent, Pickup, PlayUntil, SpawnEvent, Transition, Win,
+    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, increment16_scene, increment16_scene_json, increment17_scene, increment17_scene_json, increment18_scene, increment18_scene_json, increment19_scene, increment19_scene_json, increment20_scene, increment20_scene_json, increment21_scene, increment21_scene_json, increment22_scene, increment22_scene_json, increment23_scene, increment23_scene_json, increment24_scene, increment24_scene_json, increment25_scene, increment25_scene_json, increment26_scene, increment26_scene_json, increment27_scene, increment27_scene_json, increment28_scene, increment28_scene_json, increment29_scene, increment29_scene_json, increment30_scene, increment30_scene_json, increment31_scene, increment31_scene_json, increment32_scene, increment32_scene_json, increment33_scene, increment33_scene_json, increment34_scene, increment34_scene_json, increment35_scene, increment35_scene_json, increment36_scene, increment36_scene_json, increment37_scene, increment37_scene_json, increment38_scene, increment38_scene_json, increment39_scene, increment39_scene_json, increment40_scene, increment40_scene_json, increment41_scene, increment41_scene_json, increment42_scene, increment42_scene_json, increment43_scene, increment43_scene_json, increment44_scene, increment44_scene_json, increment45_scene, increment45_scene_json, increment46_scene, increment46_scene_json, increment47_scene, increment47_scene_json, increment48_scene, increment48_scene_json, increment49_scene, increment49_scene_json, increment50_scene, increment50_scene_json, increment51_scene, increment51_scene_json, increment52_scene, increment52_scene_json, increment53_scene, increment53_scene_json, increment54_scene, increment54_scene_json, increment55_scene, increment55_scene_json, increment56_scene, increment56_scene_json, increment57_scene, increment57_scene_json, increment58_scene, increment58_scene_json, increment59_scene, increment59_scene_json, increment60_scene, increment60_scene_json, increment61_scene, increment61_scene_json, increment62_scene, increment62_scene_json, increment63_scene, increment63_scene_json, increment64_scene, increment64_scene_json, scene_catalog, catalog_ids, scene_by_id, parse_scene, Body, Camera, CameraFollow, CharacterController, CollisionGroups, DespawnEvent, DropEvent, Pickup, PlayUntil, SpawnEvent, Transition, Win,
     Impulse, Joint, Light, Material, MeshCollider, RayHit, Raycast, Scene, Shape, Shapecast, SweepHit, Trigger,
 };
 
@@ -88,6 +88,7 @@ pub const INCREMENT60_STEPS: u32 = 120;
 pub const INCREMENT61_STEPS: u32 = 120;
 pub const INCREMENT62_STEPS: u32 = 120;
 pub const INCREMENT63_STEPS: u32 = 120;
+pub const INCREMENT64_STEPS: u32 = 120;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -745,6 +746,40 @@ pub fn run_increment63(out_dir: &Path, steps: u32, dt: f32, width: u32, height: 
             .ok_or_else(|| format!("unknown transition target: {}", tr.to))?;
         let mut next_dump = step_catalog_scene_with_carry(&tr.to, steps, dt, Some(&dump))?;
         apply_win(&mut next_dump, increment63_scene().win.as_ref());
+        let next_scene_path = out_dir.join("next-scene.json");
+        let next_physics = out_dir.join("next-physics.json");
+        let next_frame = out_dir.join("next-frame.png");
+        let scene_json = serde_json::to_string_pretty(&next_scene).map_err(|e| e.to_string())?;
+        fs::write(&next_scene_path, scene_json).map_err(|e| format!("write next-scene: {e}"))?;
+        let dump_json = serde_json::to_string_pretty(&next_dump).map_err(|e| e.to_string())?;
+        fs::write(&next_physics, dump_json).map_err(|e| format!("write next-physics: {e}"))?;
+        let mut framed = next_scene.clone();
+        apply_physics_to_scene(&mut framed, &next_dump);
+        render_scene_to_png(&framed, width, height, &next_frame)?;
+    }
+    Ok(paths)
+}
+
+/// Increment 64: increment-63 lane with the increment61 drop restored.
+pub fn increment64() -> crate::scene::Scene {
+    increment64_scene()
+}
+
+/// Increment 64: write the drop+win lane, then if dump.transition.to
+/// is set, carry into the destination and apply the outcome. Token is
+/// dropped on exit so courtyard stamps dump.lost empty_handed.
+/// Does not mutate run_increment63.
+pub fn run_increment64(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
+    let paths = write_step_render(out_dir, &increment64_scene(), steps, dt, width, height)?;
+    let dump: PhysicsDump = {
+        let txt = fs::read_to_string(&paths.physics).map_err(|e| format!("read physics: {e}"))?;
+        serde_json::from_str(&txt).map_err(|e| format!("parse physics: {e}"))?
+    };
+    if let Some(tr) = &dump.transition {
+        let next_scene = scene_by_id(&tr.to)
+            .ok_or_else(|| format!("unknown transition target: {}", tr.to))?;
+        let mut next_dump = step_catalog_scene_with_carry(&tr.to, steps, dt, Some(&dump))?;
+        apply_win(&mut next_dump, increment64_scene().win.as_ref());
         let next_scene_path = out_dir.join("next-scene.json");
         let next_physics = out_dir.join("next-physics.json");
         let next_frame = out_dir.join("next-frame.png");
