@@ -77,6 +77,11 @@ pub struct PhysicsDump {
     /// without a `transition` key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transition: Option<TransitionRecord>,
+    /// Stamped after a carry into the destination when the source
+    /// scene authors a win and dump.held still includes win.body.
+    /// Omitted when none so increment 18–62 dumps stay without a `won` key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub won: Option<WonRecord>,
 }
 
 
@@ -97,6 +102,13 @@ pub struct StoppedRecord {
 pub struct TransitionRecord {
     pub to: String,
     pub at_step: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WonRecord {
+    pub kind: String,
+    pub body: String,
+    pub scene: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1649,7 +1661,26 @@ pub fn step_physics_with_carry(
             }),
             _ => None,
         },
+        // Lane runs omit won even when the source scene authors win.
+        // Stamp after a carry into the destination (see apply_win).
+        won: None,
     })
+}
+
+/// Stamp dump.won when `win` is Some and dump.held includes win.body.
+/// The win spec travels with the source scene / carry, not the
+/// destination catalog scene (courtyard has no win field).
+pub fn apply_win(dump: &mut PhysicsDump, win: Option<&crate::scene::Win>) {
+    let Some(win) = win else {
+        return;
+    };
+    if dump.held.iter().any(|h| h.id == win.body) {
+        dump.won = Some(WonRecord {
+            kind: win.kind.clone(),
+            body: win.body.clone(),
+            scene: dump.scene.clone(),
+        });
+    }
 }
 
 /// Look up a catalog scene, step it, then stamp dump.scene with the

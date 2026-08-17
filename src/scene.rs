@@ -67,6 +67,11 @@ pub struct Scene {
     /// increment 18–60 JSON stay compact.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transition: Option<Transition>,
+    /// Authorable win. After a carry into the destination, if
+    /// dump.held includes `body`, dump.won is stamped.
+    /// Omitted when none so increment 18–62 JSON stay compact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub win: Option<Win>,
     #[serde(skip, default)]
     pub mesh_search_dirs: Vec<PathBuf>,
 }
@@ -387,6 +392,13 @@ pub struct PlayUntil {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Transition {
     pub to: String,
+}
+
+/// Authorable win condition. `kind` + `body` (e.g. delivered / token).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Win {
+    pub kind: String,
+    pub body: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5425,6 +5437,7 @@ pub fn increment54_scene() -> Scene {
             body: "token".into(),
         }),
         transition: None,
+        win: None,
         mesh_search_dirs: vec![],
     }
 }
@@ -5662,5 +5675,26 @@ pub fn increment62_scene_json() -> &'static str {
 pub fn increment62_scene() -> Scene {
     let mut scene = increment61_scene();
     scene.drops.clear();
+    scene
+}
+
+pub fn increment63_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        serde_json::to_string_pretty(&increment63_scene()).expect("serialize increment63 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-62 lane plus an authorable win. Clones increment62_scene()
+/// so hold / no-drops / transition courtyard / npc cannot drift.
+/// ONLY sets `win: { kind: "delivered", body: "token" }`.
+/// increment62_scene() stays won-free.
+pub fn increment63_scene() -> Scene {
+    let mut scene = increment62_scene();
+    scene.win = Some(Win {
+        kind: "delivered".into(),
+        body: "token".into(),
+    });
     scene
 }

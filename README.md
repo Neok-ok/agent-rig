@@ -1,4 +1,4 @@
-# agent-rig (increments 1–62)
+# agent-rig (increments 1–63)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1935,4 +1935,10 @@ Increment 62: carry held items across a transition. increment62_scene clones inc
 ```bash
 agent-rig increment62 --out artifacts/increment62
 agent-rig sim --scene courtyard --carry artifacts/increment62/physics.json
+```
+
+Increment 63: authorable win. increment63_scene clones increment62 and ONLY sets `win: { kind: "delivered", body: "token" }`. increment62 stays won-free (no `win` key). increment 18–62 scene JSON stay compact. Lane dump: `scene=lane`, steps ~100, token held at walker + hold_offset `[0.16, 0.22, 0.00]`, `dump.held` token@66, transition courtyard; lane dump omits `won`. After the courtyard carry, if `dump.held` includes `win.body`, next-physics stamps `dump.won = { kind: delivered, body: token, scene: courtyard }`. increment62 next-physics stays without a `won` key. Same visuals as 62 (gold token ON the walker, then courtyard with token + yellow bar). Inspectable delta is `dump.won`. Three.js both. No increment 64.
+
+```bash
+agent-rig increment63 --out artifacts/increment63
 ```
