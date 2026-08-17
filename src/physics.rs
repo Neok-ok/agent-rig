@@ -303,6 +303,8 @@ impl PhysicsWorld {
                     axis,
                     limits,
                     anchor,
+                    motor_target_velocity,
+                    motor_max_force,
                 } => {
                     let ha = *self.body_handles.get(body_a).ok_or_else(|| {
                         format!("slider body_a '{body_a}' not found")
@@ -331,18 +333,38 @@ impl PhysicsWorld {
                     let unit_b = UnitVector::try_new(local_axis_b, 1e-6).ok_or_else(|| {
                         format!("slider axis too small: {axis:?}")
                     })?;
-                    let slider = PrismaticJointBuilder::new(unit_a)
+                    // Authored motor. Both 0 (increment 29–33) keeps the
+                    // open-from-velocity slider. Nonzero target drives the
+                    // drawer along the axis with a ForceBased motor so
+                    // motor_max_force (~6) can close against residual motion.
+                    let authored = *motor_target_velocity != 0.0 || *motor_max_force != 0.0;
+                    let mut builder = PrismaticJointBuilder::new(unit_a)
                         .local_axis1(unit_a)
                         .local_axis2(unit_b)
                         .local_anchor1(local_a)
                         .local_anchor2(local_b)
                         .limits(*limits)
-                        .contacts_enabled(false)
-                        .build();
+                        .contacts_enabled(false);
+                    if authored {
+                        let target = *motor_target_velocity;
+                        let factor = if *motor_max_force == 0.0 { 6.0 } else { *motor_max_force };
+                        builder = builder
+                            .motor_velocity(target, factor)
+                            .motor_model(MotorModel::ForceBased)
+                            .motor_max_force(factor);
+                    }
+                    let slider = builder.build();
                     self.impulse_joint_set.insert(ha, hb, slider, true);
                     if let Some(rb) = self.rigid_body_set.get_mut(hb) {
-                        rb.set_linear_damping(1.0);
-                        rb.set_angular_damping(3.0);
+                        // Heavy damping is for the free-slide settle. A driven
+                        // motor only needs light damping so it can close.
+                        if authored {
+                            rb.set_linear_damping(0.2);
+                            rb.set_angular_damping(0.4);
+                        } else {
+                            rb.set_linear_damping(1.0);
+                            rb.set_angular_damping(3.0);
+                        }
                     }
                     self.authored_joints.push(PhysicsJoint {
                         kind: "slider".into(),
@@ -351,8 +373,8 @@ impl PhysicsWorld {
                         anchor: dump_anchor,
                         axis: *axis,
                         limits: Some(*limits),
-                        motor_target_velocity: None,
-                        motor_max_force: None,
+                        motor_target_velocity: Some(*motor_target_velocity),
+                        motor_max_force: Some(*motor_max_force),
                     });
                 }
                 Joint::Ball {
