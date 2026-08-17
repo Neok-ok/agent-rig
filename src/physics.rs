@@ -49,6 +49,9 @@ pub struct PhysicsJoint {
     /// Authored hinge motor max force / factor. Present on hinges even if 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motor_max_force: Option<f32>,
+    /// Current hinge angle (radians) after the last step. Hinges only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,6 +102,8 @@ struct PhysicsWorld {
     /// Authored kinematic linear velocities (body id -> Vector), re-applied each step.
     kinematic_linvels: HashMap<String, Vector<f32>>,
     authored_joints: Vec<PhysicsJoint>,
+    /// Impulse-joint handles for authored hinges, used to dump angle after step.
+    hinge_handles: Vec<(usize, ImpulseJointHandle)>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
     physics_pipeline: PhysicsPipeline,
@@ -123,6 +128,7 @@ impl PhysicsWorld {
             body_ids: Vec::new(),
             kinematic_linvels: HashMap::new(),
             authored_joints: Vec::new(),
+            hinge_handles: Vec::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
                 let mut p = IntegrationParameters::default();
@@ -274,6 +280,7 @@ impl PhysicsWorld {
                     body_b,
                     anchor,
                     axis,
+                    limits,
                     motor_target_velocity,
                     motor_max_force,
                 } => {
@@ -314,8 +321,11 @@ impl PhysicsWorld {
                             .motor_model(MotorModel::ForceBased)
                             .motor_max_force(factor);
                     }
+                    if let Some(lim) = limits {
+                        builder = builder.limits(*lim);
+                    }
                     let hinge = builder.build();
-                    self.impulse_joint_set.insert(ha, hb, hinge, true);
+                    let handle = self.impulse_joint_set.insert(ha, hb, hinge, true);
                     if let Some(rb) = self.rigid_body_set.get_mut(hb) {
                         // Heavy damping is for the hang settle. A driven motor
                         // only needs light damping so it can keep swinging.
@@ -327,16 +337,19 @@ impl PhysicsWorld {
                             rb.set_linear_damping(1.0);
                         }
                     }
+                    let dump_idx = self.authored_joints.len();
                     self.authored_joints.push(PhysicsJoint {
                         kind: "hinge".into(),
                         body_a: body_a.clone(),
                         body_b: body_b.clone(),
                         anchor: *anchor,
                         axis: *axis,
-                        limits: None,
+                        limits: *limits,
                         motor_target_velocity: Some(*motor_target_velocity),
                         motor_max_force: Some(*motor_max_force),
+                        angle: None,
                     });
+                    self.hinge_handles.push((dump_idx, handle));
                 }
                 Joint::Slider {
                     body_a,
@@ -416,6 +429,7 @@ impl PhysicsWorld {
                         limits: Some(*limits),
                         motor_target_velocity: Some(*motor_target_velocity),
                         motor_max_force: Some(*motor_max_force),
+                        angle: None,
                     });
                 }
                 Joint::Ball {
@@ -455,6 +469,7 @@ impl PhysicsWorld {
                         limits: None,
                         motor_target_velocity: None,
                         motor_max_force: None,
+                        angle: None,
                     });
                 }
                 Joint::Fixed {
@@ -493,6 +508,7 @@ impl PhysicsWorld {
                         limits: None,
                         motor_target_velocity: None,
                         motor_max_force: None,
+                        angle: None,
                     });
                 }
             }
@@ -720,6 +736,21 @@ impl PhysicsWorld {
         hits
     }
 
+    fn refresh_hinge_angles(&mut self) {
+        for (idx, handle) in &self.hinge_handles {
+            let Some(joint) = self.impulse_joint_set.get(*handle) else {
+                continue;
+            };
+            let Some(rev) = joint.data.as_revolute() else {
+                continue;
+            };
+            let rb1 = &self.rigid_body_set[joint.body1];
+            let rb2 = &self.rigid_body_set[joint.body2];
+            let angle = rev.angle(rb1.rotation(), rb2.rotation());
+            self.authored_joints[*idx].angle = Some(angle);
+        }
+    }
+
     fn snapshot_frame(&self, step: u32) -> TrajectoryFrame {
         TrajectoryFrame {
             step,
@@ -734,6 +765,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
     for _ in 0..steps {
         world.step();
     }
+    world.refresh_hinge_angles();
     Ok(PhysicsDump {
         steps,
         dt,
