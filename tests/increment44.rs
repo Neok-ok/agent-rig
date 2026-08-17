@@ -160,7 +160,7 @@ fn assert_no_cork(scene: &agent_rig::Scene, name: &str) {
 fn gate_hinge(scene: &agent_rig::Scene) -> ([f32; 3], [f32; 3], [f32; 2], f32, f32) {
     for j in &scene.joints {
         if let Joint::Hinge {
-            body_a, body_b, anchor, axis, limits, motor_target_velocity, motor_max_force,
+            body_a, body_b, anchor, axis, limits, motor_target_velocity, motor_max_force, ..
         } = j
         {
             if body_a == "ground" && body_b == "gate" {

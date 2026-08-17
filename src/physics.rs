@@ -59,6 +59,9 @@ pub struct PhysicsJoint {
     /// Authored hinge motor max force / factor. Present on hinges even if 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motor_max_force: Option<f32>,
+    /// Authored hinge position-motor target (radians). Present when authored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motor_target_position: Option<f32>,
     /// Current hinge angle (radians) after the last step. Hinges only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle: Option<f32>,
@@ -310,6 +313,7 @@ impl PhysicsWorld {
                     limits,
                     motor_target_velocity,
                     motor_max_force,
+                    motor_target_position,
                 } => {
                     let ha = *self.body_handles.get(body_a).ok_or_else(|| {
                         format!("hinge body_a '{body_a}' not found")
@@ -331,6 +335,10 @@ impl PhysicsWorld {
                     // damper-to-zero: motor_velocity(0, 8). Nonzero target
                     // drives the lantern around the hinge axis with a
                     // ForceBased motor so motor_max_force (~8) can beat gravity.
+                    // When motor_target_position is authored and max_force > 0,
+                    // use Rapier 0.26 motor_position instead of velocity so the
+                    // gate can settle at 0.55 instead of slamming the limit.
+                    let position_motor = motor_target_position.is_some() && *motor_max_force > 0.0;
                     let authored = *motor_target_velocity != 0.0 || *motor_max_force != 0.0;
                     let target = *motor_target_velocity;
                     let factor = if authored {
@@ -341,12 +349,22 @@ impl PhysicsWorld {
                     let mut builder = RevoluteJointBuilder::new(unit)
                         .local_anchor1(local_a)
                         .local_anchor2(local_b)
-                        .contacts_enabled(false)
-                        .motor_velocity(target, factor);
-                    if authored {
+                        .contacts_enabled(false);
+                    if position_motor {
+                        let pos = motor_target_position.unwrap();
+                        // Stiffness/damping chosen so a 0.55 rad target
+                        // settles inside 120 steps without hitting 1.15.
                         builder = builder
+                            .motor_position(pos, 40.0, 12.0)
                             .motor_model(MotorModel::ForceBased)
                             .motor_max_force(factor);
+                    } else {
+                        builder = builder.motor_velocity(target, factor);
+                        if authored {
+                            builder = builder
+                                .motor_model(MotorModel::ForceBased)
+                                .motor_max_force(factor);
+                        }
                     }
                     if let Some(lim) = limits {
                         builder = builder.limits(*lim);
@@ -374,6 +392,7 @@ impl PhysicsWorld {
                         limits: *limits,
                         motor_target_velocity: Some(*motor_target_velocity),
                         motor_max_force: Some(*motor_max_force),
+                        motor_target_position: *motor_target_position,
                         angle: None,
                         rest_length: None,
                         stiffness: None,
@@ -459,6 +478,7 @@ impl PhysicsWorld {
                         limits: Some(*limits),
                         motor_target_velocity: Some(*motor_target_velocity),
                         motor_max_force: Some(*motor_max_force),
+                        motor_target_position: None,
                         angle: None,
                         rest_length: None,
                         stiffness: None,
@@ -502,6 +522,7 @@ impl PhysicsWorld {
                         limits: None,
                         motor_target_velocity: None,
                         motor_max_force: None,
+                        motor_target_position: None,
                         angle: None,
                         rest_length: None,
                         stiffness: None,
@@ -544,6 +565,7 @@ impl PhysicsWorld {
                         limits: None,
                         motor_target_velocity: None,
                         motor_max_force: None,
+                        motor_target_position: None,
                         angle: None,
                         rest_length: None,
                         stiffness: None,
@@ -599,6 +621,7 @@ impl PhysicsWorld {
                         limits: None,
                         motor_target_velocity: None,
                         motor_max_force: None,
+                        motor_target_position: None,
                         angle: None,
                         rest_length: Some(*rest_length),
                         stiffness: None,
@@ -654,6 +677,7 @@ impl PhysicsWorld {
                         limits: None,
                         motor_target_velocity: None,
                         motor_max_force: None,
+                        motor_target_position: None,
                         angle: None,
                         rest_length: Some(*rest_length),
                         stiffness: Some(*stiffness),
