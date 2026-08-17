@@ -158,6 +158,9 @@ struct Prim {
     ior: f32,
     clearcoat: f32,
     clearcoat_roughness: f32,
+    sheen: f32,
+    sheen_roughness: f32,
+    sheen_color: V3,
 }
 
 struct AlbedoMap {
@@ -477,6 +480,9 @@ struct Hit {
     ior: f32,
     clearcoat: f32,
     clearcoat_roughness: f32,
+    sheen: f32,
+    sheen_roughness: f32,
+    sheen_color: V3,
 }
 
 /// Order-2 SH of the procedural HDR environment (y-up).
@@ -504,6 +510,9 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         let mut ior = 1.5f32;
         let clearcoat = b.material.clearcoat.clamp(0.0, 1.0);
         let clearcoat_roughness = b.material.clearcoat_roughness;
+        let sheen = b.material.sheen.clamp(0.0, 1.0);
+        let sheen_roughness = b.material.sheen_roughness;
+        let sheen_color = V3::from_arr(b.material.sheen_color);
         let mut albedo_map = b.material.albedo_map.as_ref().map(|p| {
             let resolved = scene
                 .resolve_texture(p)
@@ -664,6 +673,9 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             ior,
             clearcoat,
             clearcoat_roughness,
+            sheen,
+            sheen_roughness,
+            sheen_color,
         });
     }
 
@@ -1145,6 +1157,9 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         ior: prim.ior,
         clearcoat: prim.clearcoat,
         clearcoat_roughness: prim.clearcoat_roughness,
+        sheen: prim.sheen,
+        sheen_roughness: prim.sheen_roughness,
+        sheen_color: prim.sheen_color,
     }
 }
 
@@ -1220,6 +1235,37 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
         );
     }
 
+    // Extra fabric/velvet sheen IBL. Color = authored sheen_color, softness =
+    // authored sheen_roughness, weight = authored sheen. Grazing Charlie-like
+    // rim (high 1-N·V), not a base-albedo tint of the whole surface.
+    // Env contributes luminance only so the tint stays the authored crimson.
+    if h.sheen > 1e-4 {
+        let sh_w = h.sheen.clamp(0.0, 1.0);
+        let sh_rough = h.sheen_roughness.clamp(0.04, 1.0);
+        let sh_col = h.sheen_color;
+        let grazing = (1.0 - n_dot_v).clamp(0.0, 1.0);
+        // Higher authored roughness → lower power → broader / softer rim.
+        let power = 0.55 + 2.4 * (1.0 - sh_rough);
+        let rim = grazing.powf(power);
+        let sh_env = env_specular(r, n, sh_rough);
+        let tangent_v = v.sub(n.mul(n_dot_v));
+        let wrap_dir = if tangent_v.len() > 1e-5 {
+            tangent_v.norm()
+        } else {
+            r
+        };
+        let wrap = env_radiance(wrap_dir);
+        let env_lum = (0.2126 * sh_env.x + 0.7152 * sh_env.y + 0.0722 * sh_env.z).max(0.0);
+        let wrap_lum = (0.2126 * wrap.x + 0.7152 * wrap.y + 0.0722 * wrap.z).max(0.0);
+        // Grazing mix: velvet fibers take over the rim/top. Not a dye of the
+        // whole bench — facing pixels keep the authored albedo.
+        let take = (sh_w * rim * 0.82).clamp(0.0, 0.88);
+        let sheen_ibl = sh_col.mul(
+            sh_w * rim * spec_ao * (1.10 * env_lum + 1.40 * wrap_lum) * 2.4,
+        );
+        color = color.mul(1.0 - take).add(sheen_ibl);
+    }
+
     for light in lights {
         match light {
             Light::Directional {
@@ -1251,6 +1297,18 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                         n_dot_l,
                         radiance,
                         h.clearcoat,
+                    ));
+                }
+                if h.sheen > 1e-4 {
+                    color = color.add(sheen_lobe(
+                        h.sheen_color,
+                        h.sheen_roughness.clamp(0.04, 1.0),
+                        n,
+                        v,
+                        l,
+                        n_dot_l,
+                        radiance,
+                        h.sheen,
                     ));
                 }
             }
@@ -1285,6 +1343,18 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                         n_dot_l,
                         radiance,
                         h.clearcoat,
+                    ));
+                }
+                if h.sheen > 1e-4 {
+                    color = color.add(sheen_lobe(
+                        h.sheen_color,
+                        h.sheen_roughness.clamp(0.04, 1.0),
+                        n,
+                        v,
+                        l,
+                        n_dot_l,
+                        radiance,
+                        h.sheen,
                     ));
                 }
             }
@@ -1334,6 +1404,18 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                                 h.clearcoat,
                             ));
                         }
+                        if h.sheen > 1e-4 {
+                            acc = acc.add(sheen_lobe(
+                                h.sheen_color,
+                                h.sheen_roughness.clamp(0.04, 1.0),
+                                n,
+                                v,
+                                l,
+                                n_dot_l,
+                                radiance,
+                                h.sheen,
+                            ));
+                        }
                     }
                 }
                 color = color.add(acc.mul(1.0 / n_samples));
@@ -1365,6 +1447,46 @@ fn clearcoat_specular(
     let g = geometry_smith(n_dot_v, n_dot_l, roughness);
     let spec = f.mul(d * g / (4.0 * n_dot_v * n_dot_l + 1e-4));
     spec.hadamard(radiance).mul(n_dot_l * weight)
+}
+
+/// Extra fabric/velvet Charlie sheen lobe. Color = authored `sheen_color`,
+/// roughness = authored `sheen_roughness` (softer/broader when higher),
+/// weight = authored `sheen`. Intensity rises toward grazing (high 1-N·V).
+/// Extra layer, not a base-albedo tint.
+fn sheen_lobe(
+    sheen_color: V3,
+    roughness: f32,
+    n: V3,
+    v: V3,
+    l: V3,
+    n_dot_l: f32,
+    radiance: V3,
+    weight: f32,
+) -> V3 {
+    let h = v.add(l).norm();
+    let n_dot_v = n.dot(v).max(1e-4);
+    let n_dot_h = n.dot(h).max(0.0);
+    let d = charlie_d(n_dot_h, roughness);
+    let vis = ashikhmin_v(n_dot_l, n_dot_v);
+    let grazing = (1.0 - n_dot_v).clamp(0.0, 1.0);
+    // Softness from authored roughness: higher → broader (lower power).
+    let power = 0.55 + 2.4 * (1.0 - roughness);
+    let rim = grazing.powf(power);
+    // Rim-weighted so the lobe reads as velvet sheen, not a facing dye.
+    let light_lum = (0.2126 * radiance.x + 0.7152 * radiance.y + 0.0722 * radiance.z).max(0.0);
+    sheen_color.mul(d * vis * n_dot_l * weight * (0.18 + 3.6 * rim) * light_lum)
+}
+
+/// Charlie NDF (Estevez & Kulla). Roughness is the authored sheen_roughness.
+fn charlie_d(n_dot_h: f32, roughness: f32) -> f32 {
+    let inv_a = 1.0 / roughness.max(1e-4);
+    let sin2h = (1.0 - n_dot_h * n_dot_h).max(0.0078125);
+    (2.0 + inv_a) * sin2h.powf(inv_a * 0.5) / (2.0 * PI)
+}
+
+/// Ashikhmin visibility used with Charlie sheen.
+fn ashikhmin_v(n_dot_l: f32, n_dot_v: f32) -> f32 {
+    (1.0 / (4.0 * (n_dot_l + n_dot_v - n_dot_l * n_dot_v))).clamp(0.0, 1.0)
 }
 
 fn cook_torrance(albedo: V3, roughness: f32, metallic: f32, n: V3, v: V3, l: V3, n_dot_l: f32, radiance: V3) -> V3 {
