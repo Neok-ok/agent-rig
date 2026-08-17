@@ -36,6 +36,15 @@ pub struct Scene {
     /// increment 18-46 JSON stay compact.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub record_contact_events: bool,
+    /// Scheduled body inserts. Applied at the start of `at_step` (0-based),
+    /// before pipeline.step / move_shape. Omitted when empty so increment
+    /// 18–49 JSON stay compact.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spawns: Vec<SpawnEvent>,
+    /// Scheduled body removals. Applied at the start of `at_step` (0-based).
+    /// Joints attached to the body are dropped. Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub despawns: Vec<DespawnEvent>,
     #[serde(skip, default)]
     pub mesh_search_dirs: Vec<PathBuf>,
 }
@@ -283,6 +292,20 @@ pub struct Body {
     #[serde(default, skip_serializing_if = "CollisionGroups::is_default")]
     pub collision_groups: CollisionGroups,
     pub material: Material,
+}
+
+/// Insert `body` into the Rapier world at the start of `at_step`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpawnEvent {
+    pub at_step: u32,
+    pub body: Body,
+}
+
+/// Remove body `body` (id) at the start of `at_step`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DespawnEvent {
+    pub at_step: u32,
+    pub body: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4985,6 +5008,82 @@ pub fn increment49_scene() -> Scene {
             emissive: [0.0, 0.0, 0.0],
             emissive_intensity: 0.0,
         },
+    });
+    scene
+}
+
+pub fn increment50_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        let mut v: serde_json::Value = serde_json::from_str(increment49_scene_json())
+            .expect("increment49 scene JSON is valid");
+        v["spawns"] = serde_json::json!([{
+            "at_step": 30,
+            "body": {
+                "id": "token",
+                "shape": { "type": "sphere", "radius": 0.10 },
+                "position": [0.70, 0.12, 1.45],
+                "rotation_wxyz": [1, 0, 0, 0],
+                "mass": 0,
+                "collision_groups": { "membership": 4, "filter": 65535 },
+                "material": { "albedo": [0.95, 0.78, 0.22], "roughness": 0.35, "metallic": 0.85 }
+            }
+        }]);
+        v["despawns"] = serde_json::json!([{
+            "at_step": 80,
+            "body": "bar"
+        }]);
+        serde_json::to_string_pretty(&v).expect("serialize increment50 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-49 courtyard plus scheduled spawn/despawn. Clones
+/// increment49_scene() so camera / walker / bar / groups / courtyard
+/// cannot drift. Adds ONLY `spawns` (gold token at step 30) and
+/// `despawns` (yellow bar at step 80). increment49_scene() stays
+/// timed-event-free (bar still there, no token).
+pub fn increment50_scene() -> Scene {
+    let mut scene = increment49_scene();
+    scene.spawns.push(SpawnEvent {
+        at_step: 30,
+        body: Body {
+            id: "token".into(),
+            shape: Shape::Sphere { radius: 0.10 },
+            position: [0.70, 0.12, 1.45],
+            rotation_wxyz: [1.0, 0.0, 0.0, 0.0],
+            mass: 0.0,
+            linear_velocity: [0.0, 0.0, 0.0],
+            kinematic: false,
+            controller: None,
+            collision_groups: CollisionGroups {
+                membership: 4,
+                filter: 0xFFFF,
+            },
+            material: Material {
+                albedo: [0.95, 0.78, 0.22],
+                roughness: 0.35,
+                metallic: 0.85,
+                albedo_map: None,
+                clearcoat: 0.0,
+                clearcoat_roughness: 0.0,
+                sheen: 0.0,
+                sheen_roughness: 0.5,
+                sheen_color: [1.0, 1.0, 1.0],
+                anisotropy: 0.0,
+                anisotropy_rotation: 0.0,
+                iridescence: 0.0,
+                iridescence_ior: 1.3,
+                iridescence_thickness: 400.0,
+                dispersion: 0.0,
+                emissive: [0.0, 0.0, 0.0],
+                emissive_intensity: 0.0,
+            },
+        },
+    });
+    scene.despawns.push(DespawnEvent {
+        at_step: 80,
+        body: "bar".into(),
     });
     scene
 }

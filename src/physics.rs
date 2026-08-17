@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::scene::{
-    CharacterController, CollisionGroups, Impulse, Joint, MeshCollider, RayHit, Scene, Shape,
+    Body, CharacterController, CollisionGroups, Impulse, Joint, MeshCollider, RayHit, Scene, Shape,
     SweepHit, Trigger,
 };
 use rapier3d::control::{CharacterLength, KinematicCharacterController};
@@ -42,6 +42,26 @@ pub struct PhysicsDump {
     /// so increment-47 dumps stay without a `controllers` key.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub controllers: Vec<ControllerState>,
+    /// Bodies inserted by authored `spawns`. Omitted when empty so
+    /// increment-49 dumps stay without a `spawned` key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spawned: Vec<SpawnRecord>,
+    /// Bodies removed by authored `despawns`. Omitted when empty so
+    /// increment-49 dumps stay without a `despawned` key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub despawned: Vec<DespawnRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpawnRecord {
+    pub id: String,
+    pub at_step: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DespawnRecord {
+    pub id: String,
+    pub at_step: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,6 +191,8 @@ struct PhysicsWorld {
     body_collision_groups: HashMap<String, CollisionGroups>,
     /// Last-step controller dump (grounded + effective translation).
     controller_states: Vec<ControllerState>,
+    spawned: Vec<SpawnRecord>,
+    despawned: Vec<DespawnRecord>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
     physics_pipeline: PhysicsPipeline,
@@ -204,6 +226,8 @@ impl PhysicsWorld {
             character_controllers: HashMap::new(),
             body_collision_groups: HashMap::new(),
             controller_states: Vec::new(),
+            spawned: Vec::new(),
+            despawned: Vec::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
                 let mut p = IntegrationParameters::default();
@@ -225,8 +249,16 @@ impl PhysicsWorld {
     }
 
     fn populate(&mut self, scene: &Scene) -> Result<(), String> {
+        for body in &scene.bodies {
+            self.insert_authored_body(scene, body)?;
+        }
+        self.populate_joints(scene)?;
+        self.populate_triggers(scene)?;
+        self.apply_authored_impulses(scene)?;
+        Ok(())
+    }
 
-    for body in &scene.bodies {
+    fn insert_authored_body(&mut self, scene: &Scene, body: &Body) -> Result<(), String> {
         let [x, y, z] = body.position;
         let [w, qx, qy, qz] = body.rotation_wxyz;
         let rotation = nalgebra::UnitQuaternion::from_quaternion(nalgebra::Quaternion::new(w, qx, qy, qz));
@@ -315,10 +347,64 @@ impl PhysicsWorld {
             self.collider_to_id.insert(ch, body.id.clone());
             self.body_colliders.insert(body.id.clone(), kind);
             self.body_ids.push(body.id.clone());
+        Ok(())
+    }
+
+    fn apply_scheduled(&mut self, scene: &Scene, step: u32) -> Result<(), String> {
+        for spawn in &scene.spawns {
+            if spawn.at_step == step {
+                self.insert_authored_body(scene, &spawn.body)?;
+                self.spawned.push(SpawnRecord {
+                    id: spawn.body.id.clone(),
+                    at_step: step,
+                });
+            }
         }
-        self.populate_joints(scene)?;
-        self.populate_triggers(scene)?;
-        self.apply_authored_impulses(scene)?;
+        let ids: Vec<String> = scene
+            .despawns
+            .iter()
+            .filter(|d| d.at_step == step)
+            .map(|d| d.body.clone())
+            .collect();
+        for id in ids {
+            self.despawn_body(&id)?;
+            self.despawned.push(DespawnRecord {
+                id,
+                at_step: step,
+            });
+        }
+        Ok(())
+    }
+
+    fn despawn_body(&mut self, id: &str) -> Result<(), String> {
+        let handle = *self.body_handles.get(id).ok_or_else(|| {
+            format!("despawn body '{id}' not found")
+        })?;
+        let cols: Vec<ColliderHandle> = self.rigid_body_set[handle].colliders().to_vec();
+        self.rigid_body_set.remove(
+            handle,
+            &mut self.island_manager,
+            &mut self.collider_set,
+            &mut self.impulse_joint_set,
+            &mut self.multibody_joint_set,
+            true,
+        );
+        for ch in cols {
+            self.collider_to_id.remove(&ch);
+        }
+        self.body_handles.remove(id);
+        self.body_colliders.remove(id);
+        self.body_ids.retain(|x| x != id);
+        self.character_controllers.remove(id);
+        self.kinematic_linvels.remove(id);
+        self.body_collision_groups.remove(id);
+        for (i, j) in self.authored_joints.iter().enumerate() {
+            if j.body_a == id || j.body_b == id {
+                if !self.broken_indices.contains(&i) {
+                    self.broken_indices.push(i);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1143,7 +1229,8 @@ impl PhysicsWorld {
 
 pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, String> {
     let mut world = PhysicsWorld::from_scene(scene, dt)?;
-    for _ in 0..steps {
+    for i in 0..steps {
+        world.apply_scheduled(scene, i)?;
         world.step();
     }
     world.refresh_hinge_angles();
@@ -1167,6 +1254,8 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         broken_joints: world.broken_joints.clone(),
         contact_events: world.contact_events.clone(),
         controllers: world.controller_states.clone(),
+        spawned: world.spawned.clone(),
+        despawned: world.despawned.clone(),
     })
 }
 
@@ -1187,9 +1276,12 @@ pub fn simulate_trajectory(
     let mut world = PhysicsWorld::from_scene(scene, dt)?;
     let mut frames = Vec::with_capacity(frame_count as usize);
     frames.push(world.snapshot_frame(0));
+    let mut step = 0u32;
     for i in 1..frame_count {
         for _ in 0..frame_stride {
+            world.apply_scheduled(scene, step)?;
             world.step();
+            step += 1;
         }
         frames.push(world.snapshot_frame(i * frame_stride));
     }

@@ -415,7 +415,18 @@ function loadTexture(url) {
   });
 }
 
-for (const body of spec.bodies) {
+const liveIds = new Set(Object.keys(poses));
+const extraBodies = [];
+for (const ev of spec.spawns || []) {
+  if (ev && ev.body && ev.body.id && !(spec.bodies || []).some((b) => b.id === ev.body.id)) {
+    extraBodies.push(ev.body);
+  }
+}
+const sourceBodies = [...(spec.bodies || []), ...extraBodies];
+const renderBodies = liveIds.size
+  ? sourceBodies.filter((b) => liveIds.has(b.id))
+  : sourceBodies;
+for (const body of renderBodies) {
   const pose = poses[body.id];
   const position = pose ? pose.position : body.position;
   const rotation = pose && pose.rotation_wxyz ? pose.rotation_wxyz : (body.rotation_wxyz || [1, 0, 0, 0]);
