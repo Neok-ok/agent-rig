@@ -328,11 +328,28 @@ pub struct DespawnEvent {
 }
 
 /// Despawn `body` when `by` overlaps `trigger`.
+/// When `hold` is true, keep the body and snap it to the carrier.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pickup {
     pub body: String,
     pub trigger: String,
     pub by: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hold: bool,
+    #[serde(default, skip_serializing_if = "is_zero_offset")]
+    pub hold_offset: [f32; 3],
+}
+
+impl Default for Pickup {
+    fn default() -> Self {
+        Self {
+            body: String::new(),
+            trigger: String::new(),
+            by: String::new(),
+            hold: false,
+            hold_offset: [0.0, 0.0, 0.0],
+        }
+    }
 }
 
 /// Stop the step loop when `kind` happens to `body`.
@@ -519,6 +536,10 @@ fn default_iridescence_thickness() -> f32 {
 }
 
 fn is_zero_emissive(v: &[f32; 3]) -> bool {
+    v[0] == 0.0 && v[1] == 0.0 && v[2] == 0.0
+}
+
+fn is_zero_offset(v: &[f32; 3]) -> bool {
     v[0] == 0.0 && v[1] == 0.0 && v[2] == 0.0
 }
 
@@ -5160,6 +5181,8 @@ pub fn increment51_scene() -> Scene {
         body: "token".into(),
         trigger: "token_zone".into(),
         by: "walker".into(),
+        hold: false,
+        hold_offset: [0.0, 0.0, 0.0],
     });
     scene
 }
@@ -5362,6 +5385,8 @@ pub fn increment54_scene() -> Scene {
             body: "token".into(),
             trigger: "token_zone".into(),
             by: "walker".into(),
+            hold: false,
+            hold_offset: [0.0, 0.0, 0.0],
         }],
         play_until: Some(PlayUntil {
             kind: "picked_up".into(),
@@ -5409,5 +5434,30 @@ pub fn increment55_scene() -> Scene {
         kind: "entered".into(),
         body: "exit".into(),
     });
+    scene
+}
+
+pub fn increment56_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        let mut v: serde_json::Value = serde_json::from_str(increment55_scene_json())
+            .expect("increment55 scene JSON is valid");
+        if let Some(p) = v["pickups"].as_array_mut().and_then(|a| a.get_mut(0)) {
+            p["hold"] = serde_json::json!(true);
+            p["hold_offset"] = serde_json::json!([0.16, 0.22, 0.00]);
+        }
+        serde_json::to_string_pretty(&v).expect("serialize increment56 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-55 lane plus hold-on-pickup. Clones increment55_scene()
+/// so lane bodies / token / token_zone / exit / play_until / follow-cam
+/// cannot drift. ONLY sets the existing token pickup to hold.
+/// increment55_scene() stays despawn-on-pickup (no hold key).
+pub fn increment56_scene() -> Scene {
+    let mut scene = increment55_scene();
+    scene.pickups[0].hold = true;
+    scene.pickups[0].hold_offset = [0.16, 0.22, 0.00];
     scene
 }

@@ -54,6 +54,10 @@ pub struct PhysicsDump {
     /// increment-50 dumps stay without a `picked_up` key.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub picked_up: Vec<PickupRecord>,
+    /// Bodies held (not despawned) by authored pickups. Omitted when
+    /// empty so increment-55 dumps stay without a `held` key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held: Vec<HeldRecord>,
     /// Resolved follow-cam after the last step. Omitted when the scene
     /// has no camera.follow so increment-51 dumps stay without a `camera` key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -81,6 +85,19 @@ pub struct PickupRecord {
     pub id: String,
     pub by: String,
     pub at_step: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeldRecord {
+    pub id: String,
+    pub by: String,
+    pub at_step: u32,
+}
+
+struct HeldBinding {
+    id: String,
+    by: String,
+    offset: [f32; 3],
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpawnRecord {
@@ -224,6 +241,8 @@ struct PhysicsWorld {
     spawned: Vec<SpawnRecord>,
     despawned: Vec<DespawnRecord>,
     picked_up: Vec<PickupRecord>,
+    held: Vec<HeldRecord>,
+    holds: Vec<HeldBinding>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
     physics_pipeline: PhysicsPipeline,
@@ -260,6 +279,8 @@ impl PhysicsWorld {
             spawned: Vec::new(),
             despawned: Vec::new(),
             picked_up: Vec::new(),
+            held: Vec::new(),
+            holds: Vec::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
                 let mut p = IntegrationParameters::default();
@@ -485,34 +506,72 @@ impl PhysicsWorld {
     }
 
     fn apply_pickups(&mut self, scene: &Scene, step: u32) -> Result<(), String> {
-        if scene.pickups.is_empty() {
-            return Ok(());
-        }
-        let overlaps = self.snapshot_overlaps();
-        let mut to_pick: Vec<(String, String)> = Vec::new();
-        for p in &scene.pickups {
-            if !self.body_handles.contains_key(&p.body) {
-                continue;
+        if !scene.pickups.is_empty() {
+            let overlaps = self.snapshot_overlaps();
+            let mut to_pick: Vec<(String, String, bool, [f32; 3])> = Vec::new();
+            for p in &scene.pickups {
+                if !self.body_handles.contains_key(&p.body) {
+                    continue;
+                }
+                if self.picked_up.iter().any(|r| r.id == p.body) {
+                    continue;
+                }
+                let pair_hit = overlaps
+                    .iter()
+                    .any(|o| o.trigger == p.trigger && o.body == p.by);
+                let volume_hit = self.body_overlaps_trigger(&p.by, &p.trigger);
+                if pair_hit || volume_hit {
+                    to_pick.push((p.body.clone(), p.by.clone(), p.hold, p.hold_offset));
+                }
             }
-            let pair_hit = overlaps
-                .iter()
-                .any(|o| o.trigger == p.trigger && o.body == p.by);
-            let volume_hit = self.body_overlaps_trigger(&p.by, &p.trigger);
-            if pair_hit || volume_hit {
-                to_pick.push((p.body.clone(), p.by.clone()));
-            }
-        }
-        for (id, by) in to_pick {
-            if self.body_handles.contains_key(&id) {
-                self.despawn_body(&id)?;
+            for (id, by, hold, offset) in to_pick {
+                if !self.body_handles.contains_key(&id) {
+                    continue;
+                }
                 self.picked_up.push(PickupRecord {
-                    id,
-                    by,
+                    id: id.clone(),
+                    by: by.clone(),
                     at_step: step,
                 });
+                if hold {
+                    self.held.push(HeldRecord {
+                        id: id.clone(),
+                        by: by.clone(),
+                        at_step: step,
+                    });
+                    self.holds.push(HeldBinding {
+                        id,
+                        by,
+                        offset,
+                    });
+                } else {
+                    self.despawn_body(&id)?;
+                }
             }
         }
+        self.snap_held();
         Ok(())
+    }
+
+    fn snap_held(&mut self) {
+        let snaps: Vec<(String, String, [f32; 3])> = self
+            .holds
+            .iter()
+            .map(|h| (h.id.clone(), h.by.clone(), h.offset))
+            .collect();
+        for (id, by, offset) in snaps {
+            let Some(&carrier) = self.body_handles.get(&by) else {
+                continue;
+            };
+            let Some(&item) = self.body_handles.get(&id) else {
+                continue;
+            };
+            let t = *self.rigid_body_set[carrier].translation();
+            let pos = vector![t.x + offset[0], t.y + offset[1], t.z + offset[2]];
+            if let Some(rb) = self.rigid_body_set.get_mut(item) {
+                rb.set_translation(pos, true);
+            }
+        }
     }
 
     fn body_overlaps_trigger(&self, body_id: &str, trigger_id: &str) -> bool {
@@ -1387,6 +1446,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         spawned: world.spawned.clone(),
         despawned: world.despawned.clone(),
         picked_up: world.picked_up.clone(),
+        held: world.held.clone(),
         camera,
         stopped,
     })

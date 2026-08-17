@@ -1,4 +1,4 @@
-# agent-rig (increments 1–55)
+# agent-rig (increments 1–56)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1740,6 +1740,29 @@ Writes:
 cargo run --release -- increment55 --out artifacts/increment55
 ```
 
+## Increment 56
+
+Same short stone lane as increment 55, plus authorable hold-on-pickup. `increment56_scene()` clones `increment55_scene()` and ONLY sets the existing token pickup to `hold: true` with `hold_offset: [0.16, 0.22, 0.00]`. Lane bodies, token, token_zone, exit, play_until `{ kind: entered, body: exit }`, and follow-cam offset `[-1.00, 0.80, 1.60]` stay. The walker picks up the gold token and carries it to the exit; the final dump still has the token on the walker. `increment55_scene()` stays despawn-on-pickup (no `hold` key, no token in the still). Increment 18–55 scene JSON is unchanged (no `"hold"` / `hold_offset`). Pickup `hold` defaults false and is omitted when unset; `hold_offset` defaults `[0,0,0]` and is omitted when all-zero. Three.js uses dump poses (token present) and dump.camera.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment56.sh
+```
+
+Writes:
+
+- `artifacts/increment56/scene.json` — increment-55 lane plus hold-on-pickup
+- `artifacts/increment56/physics.json` — dump stopped when walker enters exit (`steps` 85–115, `stopped` entered/exit); token still in bodies at walker + hold_offset, `held` records token by walker
+- `artifacts/increment56/frame.png` — our renderer, 800x450, gold token visible on/beside the walker at the exit
+- `artifacts/increment56/threejs-frame.png` — stock Three.js, same pose and dump.camera
+
+### CLI
+
+```bash
+cargo run --release -- increment56 --out artifacts/increment56
+```
+
 ## Scene format
 
 JSON object with `camera`, `lights`, `bodies`, optional `joints`, optional `triggers`, optional `raycasts`, optional `shapecasts`, optional `impulses`, optional `record_contact_events`, optional `spawns`, and optional `despawns`.
@@ -1877,3 +1900,5 @@ Increment 53: increment53_scene clones increment52 and adds ONLY `play_until` `{
 Increment 54: a second authored scene (short stone lane, not a courtyard clone); walker walks +x to a gold token present from t=0; play_until stops on pickup; increment53_scene stays the courtyard; increment 18-53 scene JSON unchanged; dump.steps 30..=110, dump.stopped picked_up/token, no token, walker+ground present, follow-cam; `increment54` writes scene + physics dump + our PNG.
 
 Increment 55: increment55_scene clones increment54 and only adds trigger `exit` plus play_until `{ kind: entered, body: exit }`; increment54_scene stays pickup-stop (no exit); increment 18-54 scene JSON unchanged (no `"id": "exit"`); dump.steps 85..=115, dump.stopped entered/exit, token gone (picked on the way), walker+ground+block present, overlaps include exit/walker, follow-cam; `increment55` writes scene + physics dump + our PNG.
+
+Increment 56: increment56_scene clones increment55 and ONLY sets the existing token pickup to hold with hold_offset `[0.16, 0.22, 0.00]`; increment55_scene stays despawn-on-pickup (no hold key, no token in the still); increment 18-55 scene JSON unchanged (no `"hold"`); dump.steps 85..=115, dump.stopped entered/exit, token still in bodies at walker + offset, dump.held token by walker matching picked_up, overlaps include exit/walker, follow-cam; `increment56` writes scene + physics dump + our PNG.
