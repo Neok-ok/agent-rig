@@ -438,8 +438,11 @@ for (const body of spec.bodies) {
   const sheenColor = (body.material && body.material.sheen_color);
   const anisotropy = (body.material && body.material.anisotropy) || 0;
   const anisotropyRotation = (body.material && body.material.anisotropy_rotation) || 0;
+  const iridescence = (body.material && body.material.iridescence) || 0;
+  const iridescenceIOR = (body.material && body.material.iridescence_ior);
+  const iridescenceThickness = (body.material && body.material.iridescence_thickness);
   const hasVolume = !!(gltfPbr && gltfPbr.attenuationDistance !== undefined && Number.isFinite(gltfPbr.attenuationDistance));
-  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0) || clearcoat > 0 || sheen > 0 || hasVolume || anisotropy > 0;
+  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0) || clearcoat > 0 || sheen > 0 || hasVolume || anisotropy > 0 || iridescence > 0;
   const MatClass = usePhysical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
   const mat = new MatClass({
     color: new THREE.Color(albedo[0], albedo[1], albedo[2]),
@@ -460,6 +463,13 @@ for (const body of spec.bodies) {
     mat.anisotropyRotation = anisotropyRotation;
     if (typeof geom.computeTangents === 'function') {
       try { geom.computeTangents(); } catch (e) { /* missing uv/index */ }
+    }
+  }
+  if (iridescence > 0) {
+    mat.iridescence = iridescence;
+    if (iridescenceIOR !== undefined && iridescenceIOR !== null) mat.iridescenceIOR = iridescenceIOR;
+    if (iridescenceThickness !== undefined && iridescenceThickness !== null) {
+      mat.iridescenceThicknessRange = [iridescenceThickness, iridescenceThickness];
     }
   }
   if (usePhysical && gltfPbr && gltfPbr.transmission > 0) {

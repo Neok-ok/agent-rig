@@ -166,6 +166,9 @@ struct Prim {
     sheen_color: V3,
     anisotropy: f32,
     anisotropy_rotation: f32,
+    iridescence: f32,
+    iridescence_ior: f32,
+    iridescence_thickness: f32,
 }
 
 struct AlbedoMap {
@@ -493,6 +496,9 @@ struct Hit {
     sheen_color: V3,
     anisotropy: f32,
     anisotropy_rotation: f32,
+    iridescence: f32,
+    iridescence_ior: f32,
+    iridescence_thickness: f32,
 }
 
 /// Order-2 SH of the procedural HDR environment (y-up).
@@ -528,6 +534,9 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         let sheen_color = V3::from_arr(b.material.sheen_color);
         let anisotropy = b.material.anisotropy.clamp(0.0, 1.0);
         let anisotropy_rotation = b.material.anisotropy_rotation;
+        let iridescence = b.material.iridescence.clamp(0.0, 1.0);
+        let iridescence_ior = b.material.iridescence_ior;
+        let iridescence_thickness = b.material.iridescence_thickness;
         let mut albedo_map = b.material.albedo_map.as_ref().map(|p| {
             let resolved = scene
                 .resolve_texture(p)
@@ -699,6 +708,9 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             sheen_color,
             anisotropy,
             anisotropy_rotation,
+            iridescence,
+            iridescence_ior,
+            iridescence_thickness,
         });
     }
 
@@ -1202,6 +1214,9 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         sheen_color: prim.sheen_color,
         anisotropy: prim.anisotropy,
         anisotropy_rotation: prim.anisotropy_rotation,
+        iridescence: prim.iridescence,
+        iridescence_ior: prim.iridescence_ior,
+        iridescence_thickness: prim.iridescence_thickness,
     }
 }
 
@@ -1264,7 +1279,16 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
     };
     let v = view_dir.mul(-1.0).norm();
     let n_dot_v = n.dot(v).max(1e-4);
-    let f0 = V3::new(0.04, 0.04, 0.04).mul(1.0 - h.metallic).add(h.albedo.mul(h.metallic));
+    let mut f0 = V3::new(0.04, 0.04, 0.04).mul(1.0 - h.metallic).add(h.albedo.mul(h.metallic));
+    if h.iridescence > 1e-4 {
+        f0 = apply_iridescence_f0(
+            f0,
+            n_dot_v,
+            h.iridescence,
+            h.iridescence_ior,
+            h.iridescence_thickness,
+        );
+    }
 
     let contact = contact_ao(h.p, n, prims);
     let tex_ao = h.ao.clamp(0.0, 1.0);
@@ -1295,12 +1319,34 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
     // Contact AO keeps the 0.25 floor; sampled texture AO multiplies the whole IBL spec.
     let spec_ao = (0.25 + 0.75 * contact) * tex_ao;
     // Stronger split-sum + a little raw env sheen so horizon/sky actually paints on terracotta.
+    let irid_tint = if h.iridescence > 1e-4 {
+        lerp(
+            V3::new(1.0, 1.0, 1.0),
+            saturate_iridescence_hue(iridescence_hue(
+                n_dot_v,
+                h.iridescence_ior,
+                h.iridescence_thickness,
+            )),
+            h.iridescence,
+        )
+    } else {
+        V3::new(1.0, 1.0, 1.0)
+    };
     let specular_ibl = spec_env
         .hadamard(spec_brdf)
         .mul(spec_ao * 4.4)
-        .add(spec_env.mul(0.10 * spec_ao));
+        .add(spec_env.hadamard(irid_tint).mul(0.10 * spec_ao));
 
     let mut color = diffuse_ibl.add(specular_ibl);
+    if h.iridescence > 1e-4 {
+        let hue = saturate_iridescence_hue(iridescence_hue(
+            n_dot_v,
+            h.iridescence_ior,
+            h.iridescence_thickness,
+        ));
+        // Extra thin-film spec on IBL so the brushed streak is rainbow, not gold.
+        color = color.add(spec_env.hadamard(hue).mul(h.iridescence * spec_ao * 3.2));
+    }
 
     // Anisotropic IBL lobe: evaluate the real GGX against the env sun and
     // along the authored tangent so the env streak is the lobe itself.
@@ -1332,6 +1378,9 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                 tan_aniso,
                 bit_aniso,
                 h.anisotropy,
+                h.iridescence,
+                h.iridescence_ior,
+                h.iridescence_thickness,
             ));
             if h.clearcoat > 1e-4 {
                 color = color.add(clearcoat_specular(
@@ -1345,6 +1394,9 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                     tan_aniso,
                     bit_aniso,
                     h.anisotropy,
+                    h.iridescence,
+                    h.iridescence_ior,
+                    h.iridescence_thickness,
                 ));
             }
         }
@@ -1355,7 +1407,16 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
     if h.clearcoat > 1e-4 {
         let cc_w = h.clearcoat.clamp(0.0, 1.0);
         let cc_rough = h.clearcoat_roughness.clamp(0.04, 1.0);
-        let cc_f0 = V3::new(0.04, 0.04, 0.04);
+        let mut cc_f0 = V3::new(0.04, 0.04, 0.04);
+        if h.iridescence > 1e-4 {
+            cc_f0 = apply_iridescence_f0(
+                cc_f0,
+                n_dot_v,
+                h.iridescence,
+                h.iridescence_ior,
+                h.iridescence_thickness,
+            );
+        }
         let cc_env = if h.anisotropy > 1e-4 {
             let r_ani = bent_aniso_reflection(n, v, tan_aniso, h.anisotropy);
             env_specular_aniso(r_ani, tan_aniso, bit_aniso, cc_rough, h.anisotropy)
@@ -1363,11 +1424,13 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
             env_specular(r, n, cc_rough)
         };
         let cc_brdf = env_brdf(n_dot_v, cc_rough, cc_f0);
+        let cc_tint = if h.iridescence > 1e-4 { irid_tint } else { V3::new(1.0, 1.0, 1.0) };
         color = color.add(
             cc_env
                 .hadamard(cc_brdf)
+                .hadamard(cc_tint)
                 .mul(cc_w * spec_ao * 11.0)
-                .add(cc_env.mul(1.45 * spec_ao * cc_w)),
+                .add(cc_env.hadamard(cc_tint).mul(1.45 * spec_ao * cc_w)),
         );
     }
 
@@ -1424,6 +1487,7 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                 color = color.add(base_specular(
                     h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
                     tan_aniso, bit_aniso, h.anisotropy,
+                    h.iridescence, h.iridescence_ior, h.iridescence_thickness,
                 ));
                 if h.clearcoat > 1e-4 {
                     color = color.add(clearcoat_specular(
@@ -1437,6 +1501,9 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                         tan_aniso,
                         bit_aniso,
                         h.anisotropy,
+                        h.iridescence,
+                        h.iridescence_ior,
+                        h.iridescence_thickness,
                     ));
                 }
                 if h.sheen > 1e-4 {
@@ -1474,6 +1541,7 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                 color = color.add(base_specular(
                     h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
                     tan_aniso, bit_aniso, h.anisotropy,
+                    h.iridescence, h.iridescence_ior, h.iridescence_thickness,
                 ));
                 if h.clearcoat > 1e-4 {
                     color = color.add(clearcoat_specular(
@@ -1487,6 +1555,9 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                         tan_aniso,
                         bit_aniso,
                         h.anisotropy,
+                        h.iridescence,
+                        h.iridescence_ior,
+                        h.iridescence_thickness,
                     ));
                 }
                 if h.sheen > 1e-4 {
@@ -1537,6 +1608,7 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                         acc = acc.add(base_specular(
                             h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
                             tan_aniso, bit_aniso, h.anisotropy,
+                            h.iridescence, h.iridescence_ior, h.iridescence_thickness,
                         ));
                         if h.clearcoat > 1e-4 {
                             acc = acc.add(clearcoat_specular(
@@ -1550,6 +1622,9 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                                 tan_aniso,
                                 bit_aniso,
                                 h.anisotropy,
+                                h.iridescence,
+                                h.iridescence_ior,
+                                h.iridescence_thickness,
                             ));
                         }
                         if h.sheen > 1e-4 {
@@ -1587,11 +1662,19 @@ fn clearcoat_specular(
     t: V3,
     b: V3,
     anisotropy: f32,
+    iridescence: f32,
+    iridescence_ior: f32,
+    iridescence_thickness: f32,
 ) -> V3 {
     let h = v.add(l).norm();
     let n_dot_v = n.dot(v).max(1e-4);
     let v_dot_h = v.dot(h).max(0.0);
-    let f0 = V3::new(0.04, 0.04, 0.04);
+    let mut f0 = V3::new(0.04, 0.04, 0.04);
+    if iridescence > 1e-4 {
+        f0 = apply_iridescence_f0(
+            f0, v_dot_h, iridescence, iridescence_ior, iridescence_thickness,
+        );
+    }
     let f = fresnel_schlick(v_dot_h, f0);
     let (d, g) = if anisotropy > 1e-4 {
         let (at, ab) = aniso_alphas(roughness, anisotropy);
@@ -1659,13 +1742,20 @@ fn base_specular(
     t: V3,
     b: V3,
     anisotropy: f32,
+    iridescence: f32,
+    iridescence_ior: f32,
+    iridescence_thickness: f32,
 ) -> V3 {
     if anisotropy > 1e-4 {
         cook_torrance_aniso(
             albedo, roughness, metallic, n, v, l, n_dot_l, radiance, t, b, anisotropy,
+            iridescence, iridescence_ior, iridescence_thickness,
         )
     } else {
-        cook_torrance(albedo, roughness, metallic, n, v, l, n_dot_l, radiance)
+        cook_torrance(
+            albedo, roughness, metallic, n, v, l, n_dot_l, radiance,
+            iridescence, iridescence_ior, iridescence_thickness,
+        )
     }
 }
 
@@ -1765,14 +1855,22 @@ fn cook_torrance_aniso(
     t: V3,
     b: V3,
     anisotropy: f32,
+    iridescence: f32,
+    iridescence_ior: f32,
+    iridescence_thickness: f32,
 ) -> V3 {
     let h = v.add(l).norm();
     let n_dot_v = n.dot(v).max(1e-4);
     let v_dot_h = v.dot(h).max(0.0);
     let (at, ab) = aniso_alphas(roughness, anisotropy);
-    let f0 = V3::new(0.04, 0.04, 0.04)
+    let mut f0 = V3::new(0.04, 0.04, 0.04)
         .mul(1.0 - metallic)
         .add(albedo.mul(metallic));
+    if iridescence > 1e-4 {
+        f0 = apply_iridescence_f0(
+            f0, v_dot_h, iridescence, iridescence_ior, iridescence_thickness,
+        );
+    }
     let f = fresnel_schlick(v_dot_h, f0);
     let d = ggx_d_aniso(h, n, t, b, at, ab);
     let g = smith_g1_aniso(v, n, t, b, at, ab) * smith_g1_aniso(l, n, t, b, at, ab);
@@ -1782,13 +1880,30 @@ fn cook_torrance_aniso(
     k_d.hadamard(diffuse).add(spec).hadamard(radiance).mul(n_dot_l)
 }
 
-fn cook_torrance(albedo: V3, roughness: f32, metallic: f32, n: V3, v: V3, l: V3, n_dot_l: f32, radiance: V3) -> V3 {
+fn cook_torrance(
+    albedo: V3,
+    roughness: f32,
+    metallic: f32,
+    n: V3,
+    v: V3,
+    l: V3,
+    n_dot_l: f32,
+    radiance: V3,
+    iridescence: f32,
+    iridescence_ior: f32,
+    iridescence_thickness: f32,
+) -> V3 {
     let h = v.add(l).norm();
     let n_dot_v = n.dot(v).max(1e-4);
     let n_dot_h = n.dot(h).max(0.0);
     let v_dot_h = v.dot(h).max(0.0);
 
-    let f0 = V3::new(0.04, 0.04, 0.04).mul(1.0 - metallic).add(albedo.mul(metallic));
+    let mut f0 = V3::new(0.04, 0.04, 0.04).mul(1.0 - metallic).add(albedo.mul(metallic));
+    if iridescence > 1e-4 {
+        f0 = apply_iridescence_f0(
+            f0, v_dot_h, iridescence, iridescence_ior, iridescence_thickness,
+        );
+    }
     let f = fresnel_schlick(v_dot_h, f0);
     let d = ggx_d(n_dot_h, roughness);
     let g = geometry_smith(n_dot_v, n_dot_l, roughness);
@@ -1813,6 +1928,44 @@ fn geometry_schlick_ggx(n_dot_x: f32, roughness: f32) -> f32 {
 
 fn geometry_smith(n_dot_v: f32, n_dot_l: f32, roughness: f32) -> f32 {
     geometry_schlick_ggx(n_dot_v, roughness) * geometry_schlick_ggx(n_dot_l, roughness)
+}
+
+/// View-dependent thin-film hue from optical path 2 * n * d * cos(θ).
+/// `n` and `d` (nm) are the authored iridescence_ior and iridescence_thickness.
+fn iridescence_hue(cos_theta: f32, n: f32, thickness_nm: f32) -> V3 {
+    let n = n.max(1.0001);
+    let ct = cos_theta.clamp(0.0, 1.0);
+    // Snell into the film (air → film) so IOR actually bends the path.
+    let sin2_t = (1.0 - ct * ct) / (n * n);
+    let cos_t = (1.0 - sin2_t).max(0.0).sqrt();
+    let opd = 2.0 * n * thickness_nm * cos_t;
+    let sample = |lambda: f32| -> f32 {
+        let phase = 2.0 * PI * opd / lambda;
+        0.5 + 0.5 * phase.cos()
+    };
+    // CIE-ish RGB peaks so 300–800 nm films sweep cyan / magenta / green.
+    V3::new(sample(650.0), sample(530.0), sample(450.0))
+}
+
+fn saturate_iridescence_hue(hue: V3) -> V3 {
+    let avg = (hue.x + hue.y + hue.z) * (1.0 / 3.0);
+    V3::new(
+        ((hue.x - avg) * 3.2 + 0.5).clamp(0.0, 1.0),
+        ((hue.y - avg) * 3.2 + 0.5).clamp(0.0, 1.0),
+        ((hue.z - avg) * 3.2 + 0.5).clamp(0.0, 1.0),
+    )
+}
+
+/// Tint specular F0 with the thin-film hue. Factor / IOR / thickness are authored.
+/// Extra layer on the metal Fresnel — not a base-albedo dye.
+fn apply_iridescence_f0(f0: V3, cos_theta: f32, factor: f32, ior: f32, thickness_nm: f32) -> V3 {
+    if factor <= 1e-4 {
+        return f0;
+    }
+    let sat = saturate_iridescence_hue(iridescence_hue(cos_theta, ior, thickness_nm));
+    // Mix F0 toward the spectral hue. Authored factor is the mix; do not
+    // re-anchor to gold luminance (that kept the highlight gold-only).
+    lerp(f0, sat, factor.clamp(0.0, 1.0))
 }
 
 fn fresnel_schlick(cos_theta: f32, f0: V3) -> V3 {

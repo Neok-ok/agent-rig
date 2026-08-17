@@ -144,6 +144,9 @@ impl Scene {
                     sheen_color: [1.0, 1.0, 1.0],
                     anisotropy: 0.0,
                     anisotropy_rotation: 0.0,
+                    iridescence: 0.0,
+                    iridescence_ior: 1.3,
+                    iridescence_thickness: 400.0,
                 });
             }
         }
@@ -192,6 +195,16 @@ pub struct Material {
     /// Tangent-frame rotation in radians. Direction is this authored value.
     #[serde(default)]
     pub anisotropy_rotation: f32,
+    /// Thin-film iridescence (0 = off). Optional; serde default 0.0.
+    /// Mix of the rainbow Fresnel is this authored value, not a hidden constant.
+    #[serde(default)]
+    pub iridescence: f32,
+    /// Film IOR. Optical path 2*n*d*cos(θ) uses this authored n.
+    #[serde(default = "default_iridescence_ior")]
+    pub iridescence_ior: f32,
+    /// Film thickness in nanometres. Optical path uses this authored d.
+    #[serde(default = "default_iridescence_thickness")]
+    pub iridescence_thickness: f32,
 }
 
 fn identity_wxyz() -> [f32; 4] {
@@ -204,6 +217,14 @@ fn default_sheen_roughness() -> f32 {
 
 fn default_sheen_color() -> [f32; 3] {
     [1.0, 1.0, 1.0]
+}
+
+fn default_iridescence_ior() -> f32 {
+    1.3
+}
+
+fn default_iridescence_thickness() -> f32 {
+    400.0
 }
 
 pub const DEMO_SCENE_JSON: &str = r#"{
@@ -1370,5 +1391,81 @@ pub fn increment25_scene_json() -> &'static str {
 pub fn increment25_scene() -> Scene {
     parse_scene(INCREMENT25_SCENE_JSON)
         .expect("increment25 scene JSON is valid")
+        .with_default_mesh_search()
+}
+
+
+pub const INCREMENT26_SCENE_JSON: &str = r#"{
+  "camera": { "position": [3.6, 2.35, 5.2], "look_at": [0.1, 0.38, 0.0], "fov_y_deg": 40 },
+  "lights": [
+    { "type": "directional", "direction": [-0.45, -1.0, -0.35], "color": [1.0, 0.97, 0.92], "intensity": 3.0 },
+    { "type": "area", "position": [0.15, 1.45, 0.40], "size": [1.2, 0.8], "color": [1.0, 0.75, 0.45], "intensity": 40.0, "normal": [0.0, -1.0, 0.0] }
+  ],
+  "bodies": [
+    {
+      "id": "ground",
+      "shape": { "type": "mesh", "path": "meshes/bowl.obj", "collider": "trimesh" },
+      "position": [0, 0, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "material": { "albedo": [0.48, 0.44, 0.38], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "rock",
+      "shape": { "type": "mesh", "path": "meshes/rock.obj", "collider": "convex_hull" },
+      "position": [0.40, 0.002, 0.08],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 12.0,
+      "material": { "albedo": [0.48, 0.52, 0.62], "roughness": 0.28, "metallic": 0.2, "albedo_map": "textures/rock.png" }
+    },
+    {
+      "id": "ball",
+      "shape": { "type": "sphere", "radius": 0.32 },
+      "position": [-1.10, 0.36, 0.10],
+      "mass": 1.0,
+      "material": { "albedo": [0.92, 0.78, 0.45], "roughness": 0.15, "metallic": 0.9, "clearcoat": 1.0, "clearcoat_roughness": 0.08, "anisotropy": 0.95, "anisotropy_rotation": 0.6, "iridescence": 1.0, "iridescence_ior": 1.3, "iridescence_thickness": 380 }
+    },
+    {
+      "id": "pillar",
+      "shape": { "type": "mesh", "path": "meshes/pillar.gltf", "collider": "convex_hull" },
+      "position": [1.10, 0.002, 0.70],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 16.0,
+      "material": { "albedo": [0.40, 0.40, 0.42], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "pane",
+      "shape": { "type": "mesh", "path": "meshes/pane.gltf", "collider": "trimesh" },
+      "position": [0.50, 0.08, 2.20],
+      "rotation_wxyz": [0.9914449, 0.0, -0.1305262, 0.0],
+      "mass": 0,
+      "material": { "albedo": [0.75, 0.90, 1.00], "roughness": 0.08, "metallic": 0.0 }
+    },
+    {
+      "id": "crate",
+      "shape": { "type": "mesh", "path": "meshes/crate.obj", "collider": "convex_hull" },
+      "position": [-0.35, 0.002, 0.85],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 2.5,
+      "material": { "albedo": [0.62, 0.40, 0.22], "roughness": 0.78, "metallic": 0.0 }
+    },
+    {
+      "id": "bench",
+      "shape": { "type": "mesh", "path": "meshes/bench.obj", "collider": "trimesh" },
+      "position": [1.35, 0.002, -0.15],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 5.0,
+      "material": { "albedo": [0.32, 0.36, 0.40], "roughness": 0.72, "metallic": 0.0, "sheen": 1.0, "sheen_roughness": 0.4, "sheen_color": [0.75, 0.12, 0.28] }
+    }
+  ]
+}"#;
+
+pub fn increment26_scene_json() -> &'static str {
+    INCREMENT26_SCENE_JSON
+}
+
+pub fn increment26_scene() -> Scene {
+    parse_scene(INCREMENT26_SCENE_JSON)
+        .expect("increment26 scene JSON is valid")
         .with_default_mesh_search()
 }
