@@ -1,7 +1,7 @@
 use rapier3d::parry::query::ShapeCastOptions;
 use rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use crate::scene::{
@@ -270,6 +270,7 @@ struct PhysicsWorld {
     held: Vec<HeldRecord>,
     holds: Vec<HeldBinding>,
     dropped: Vec<DroppedRecord>,
+    carried_ids: HashSet<String>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
     physics_pipeline: PhysicsPipeline,
@@ -309,6 +310,7 @@ impl PhysicsWorld {
             held: Vec::new(),
             holds: Vec::new(),
             dropped: Vec::new(),
+            carried_ids: HashSet::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
                 let mut p = IntegrationParameters::default();
@@ -434,6 +436,12 @@ impl PhysicsWorld {
     fn apply_scheduled(&mut self, scene: &Scene, step: u32) -> Result<(), String> {
         for spawn in &scene.spawns {
             if spawn.at_step == step {
+                if self.carried_ids.contains(&spawn.body.id)
+                    || self.body_handles.contains_key(&spawn.body.id)
+                    || self.held.iter().any(|h| h.id == spawn.body.id)
+                {
+                    continue;
+                }
                 self.insert_authored_body(scene, &spawn.body)?;
                 self.spawned.push(SpawnRecord {
                     id: spawn.body.id.clone(),
@@ -544,6 +552,9 @@ impl PhysicsWorld {
                 if self.picked_up.iter().any(|r| r.id == p.body) {
                     continue;
                 }
+                if self.holds.iter().any(|h| h.id == p.body) {
+                    continue;
+                }
                 let pair_hit = overlaps
                     .iter()
                     .any(|o| o.trigger == p.trigger && o.body == p.by);
@@ -642,6 +653,99 @@ impl PhysicsWorld {
                 at_step: step,
             });
         }
+    }
+
+    fn apply_carry(&mut self, dest: &Scene, carry: &PhysicsDump) -> Result<(), String> {
+        let source = if !carry.scene.is_empty() {
+            crate::scene::scene_by_id(&carry.scene)
+        } else {
+            None
+        };
+        let default_offset = [0.16_f32, 0.22, 0.00];
+        let walker_pos = dest
+            .bodies
+            .iter()
+            .find(|b| b.id == "walker")
+            .map(|b| b.position)
+            .or_else(|| {
+                self.snapshot_bodies()
+                    .into_iter()
+                    .find(|b| b.id == "walker")
+                    .map(|b| b.position)
+            })
+            .unwrap_or([0.0, 0.0, 0.0]);
+        for rec in &carry.held {
+            let _carry_body = carry
+                .bodies
+                .iter()
+                .find(|b| b.id == rec.id)
+                .ok_or_else(|| {
+                    format!("carry held '{}' missing from carry dump.bodies", rec.id)
+                })?;
+            let offset = source
+                .as_ref()
+                .and_then(|s| {
+                    s.pickups
+                        .iter()
+                        .find(|p| p.body == rec.id && p.hold)
+                        .map(|p| p.hold_offset)
+                })
+                .unwrap_or(default_offset);
+            let pos = [
+                walker_pos[0] + offset[0],
+                walker_pos[1] + offset[1],
+                walker_pos[2] + offset[2],
+            ];
+            let mut body = dest
+                .spawns
+                .iter()
+                .find(|s| s.body.id == rec.id)
+                .map(|s| s.body.clone())
+                .or_else(|| dest.bodies.iter().find(|b| b.id == rec.id).cloned())
+                .or_else(|| {
+                    source.as_ref().and_then(|s| {
+                        s.bodies
+                            .iter()
+                            .find(|b| b.id == rec.id)
+                            .cloned()
+                            .or_else(|| {
+                                s.spawns
+                                    .iter()
+                                    .find(|sp| sp.body.id == rec.id)
+                                    .map(|sp| sp.body.clone())
+                            })
+                    })
+                })
+                .ok_or_else(|| format!("cannot reconstruct carried body '{}'", rec.id))?;
+            body.position = pos;
+            if !self.body_handles.contains_key(&body.id) {
+                self.insert_authored_body(dest, &body)?;
+            }
+            self.carried_ids.insert(rec.id.clone());
+            if !self.held.iter().any(|h| h.id == rec.id) {
+                self.held.push(HeldRecord {
+                    id: rec.id.clone(),
+                    by: rec.by.clone(),
+                    at_step: rec.at_step,
+                });
+            }
+            if !self.holds.iter().any(|h| h.id == rec.id) {
+                self.holds.push(HeldBinding {
+                    id: rec.id.clone(),
+                    by: rec.by.clone(),
+                    offset,
+                });
+            }
+            if !self.picked_up.iter().any(|p| p.id == rec.id) {
+                self.picked_up.push(PickupRecord {
+                    id: rec.id.clone(),
+                    by: rec.by.clone(),
+                    at_step: rec.at_step,
+                });
+            }
+        }
+        self.snap_held();
+        Ok(())
     }
 
     fn body_overlaps_trigger(&self, body_id: &str, trigger_id: &str) -> bool {
@@ -1459,7 +1563,23 @@ fn resolve_follow_camera(scene: &Scene, bodies: &[PhysicsBodyState]) -> Option<D
 }
 
 pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, String> {
+    step_physics_with_carry(scene, steps, dt, None)
+}
+
+/// Step a scene, optionally injecting held bodies from a prior dump.
+/// Carry is applied after the destination world is loaded and before
+/// the step loop: matching dest spawns are skipped, held items snap
+/// to dest.walker + hold_offset each step.
+pub fn step_physics_with_carry(
+    scene: &Scene,
+    steps: u32,
+    dt: f32,
+    carry: Option<&PhysicsDump>,
+) -> Result<PhysicsDump, String> {
     let mut world = PhysicsWorld::from_scene(scene, dt)?;
+    if let Some(c) = carry {
+        world.apply_carry(scene, c)?;
+    }
     let mut ran = 0u32;
     let mut stopped = None;
     for i in 0..steps {
@@ -1537,9 +1657,21 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
 /// increment53() / run_increment53 still call step_physics and stay
 /// scene-key-free.
 pub fn step_catalog_scene(id: &str, steps: u32, dt: f32) -> Result<PhysicsDump, String> {
+    step_catalog_scene_with_carry(id, steps, dt, None)
+}
+
+/// Look up a catalog scene, optionally inject held bodies from a
+/// prior physics dump, then stamp dump.scene with the catalog key
+/// when the authored scene has no id (courtyard).
+pub fn step_catalog_scene_with_carry(
+    id: &str,
+    steps: u32,
+    dt: f32,
+    carry: Option<&PhysicsDump>,
+) -> Result<PhysicsDump, String> {
     let scene = crate::scene::scene_by_id(id)
         .ok_or_else(|| format!("unknown scene id: {id}"))?;
-    let mut dump = step_physics(&scene, steps, dt)?;
+    let mut dump = step_physics_with_carry(&scene, steps, dt, carry)?;
     if dump.scene.is_empty() {
         dump.scene = id.to_string();
     }

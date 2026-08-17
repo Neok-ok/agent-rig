@@ -1,4 +1,4 @@
-# agent-rig (increments 1–61)
+# agent-rig (increments 1–62)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1928,4 +1928,11 @@ Increment 61: authorable scene transition. increment61_scene clones increment59 
 
 ```bash
 agent-rig increment61 --out artifacts/increment61
+```
+
+Increment 62: carry held items across a transition. increment62_scene clones increment61 and ONLY clears `drops` (empty). increment61 stays drop-on-exit. increment 18–61 scene JSON unchanged. Lane dump: `scene=lane`, steps ~100, stopped entered/exit, transition to courtyard, token still held at walker + hold_offset `[0.16, 0.22, 0.00]`, `dump.held` token@66, no dropped. `sim --scene courtyard --carry <physics.json>` injects each `dump.held` body from the carry dump into the destination at dest.walker + hold_offset, skips destination spawns whose `body.id` matches a carried id (courtyard token@30 does not spawn a second token), and seeds `dump.held`. Next dump: `scene=courtyard`, steps 1..=31, HAS token AND bar, NO npc, token on the walker, `dump.held` includes token. increment61 next-physics still has no token. Two stills: lane (gold token ON the walker) and courtyard (gold token ON the walker, yellow bar). Three.js both. No third catalog entry.
+
+```bash
+agent-rig increment62 --out artifacts/increment62
+agent-rig sim --scene courtyard --carry artifacts/increment62/physics.json
 ```

@@ -5647,3 +5647,20 @@ pub fn increment61_scene() -> Scene {
     });
     scene
 }
+
+pub fn increment62_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        serde_json::to_string_pretty(&increment62_scene()).expect("serialize increment62 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-61 lane without the drop. Clones increment61_scene()
+/// so transition / hold / npc / play_until / follow-cam cannot drift.
+/// ONLY clears `drops`. increment61_scene() stays drop-on-exit.
+pub fn increment62_scene() -> Scene {
+    let mut scene = increment61_scene();
+    scene.drops.clear();
+    scene
+}
