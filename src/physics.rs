@@ -60,6 +60,10 @@ pub struct PhysicsBodyState {
     pub angular_velocity: [f32; 3],
     #[serde(default)]
     pub collider: String,
+    /// True when the body was spawned as Rapier kinematic_velocity_based.
+    /// Omitted on dynamic/fixed bodies so existing dumps stay compact.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub kinematic: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +96,8 @@ struct PhysicsWorld {
     trigger_collider_to_id: HashMap<ColliderHandle, String>,
     body_colliders: HashMap<String, String>,
     body_ids: Vec<String>,
+    /// Authored kinematic linear velocities (body id -> Vector), re-applied each step.
+    kinematic_linvels: HashMap<String, Vector<f32>>,
     authored_joints: Vec<PhysicsJoint>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
@@ -115,6 +121,7 @@ impl PhysicsWorld {
             trigger_collider_to_id: HashMap::new(),
             body_colliders: HashMap::new(),
             body_ids: Vec::new(),
+            kinematic_linvels: HashMap::new(),
             authored_joints: Vec::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
@@ -143,16 +150,25 @@ impl PhysicsWorld {
         let rotation = nalgebra::UnitQuaternion::from_quaternion(nalgebra::Quaternion::new(w, qx, qy, qz));
         let iso = Isometry::from_parts(Translation::new(x, y, z), rotation);
 
-        let rb = if body.mass <= 0.0 {
+        let [vx, vy, vz] = body.linear_velocity;
+        let rb = if body.kinematic {
+            RigidBodyBuilder::kinematic_velocity_based()
+                .position(iso)
+                .linvel(vector![vx, vy, vz])
+                .build()
+        } else if body.mass <= 0.0 {
             RigidBodyBuilder::fixed().position(iso).build()
         } else {
-            let [vx, vy, vz] = body.linear_velocity;
             RigidBodyBuilder::dynamic()
                 .position(iso)
                 .linvel(vector![vx, vy, vz])
                 .build()
         };
         let handle = self.rigid_body_set.insert(rb);
+        if body.kinematic {
+            self.kinematic_linvels
+                .insert(body.id.clone(), vector![vx, vy, vz]);
+        }
 
         // Density from authored mass so inertia is non-zero (needed for body-body hits).
         let kind = body.shape.collider_kind().to_string();
@@ -485,6 +501,14 @@ impl PhysicsWorld {
     }
 
     fn step(&mut self) {
+        let kinematic_drives: Vec<(RigidBodyHandle, Vector<f32>)> = self
+            .kinematic_linvels
+            .iter()
+            .map(|(id, vel)| (self.body_handles[id], *vel))
+            .collect();
+        for (handle, vel) in kinematic_drives {
+            self.rigid_body_set[handle].set_linvel(vel, true);
+        }
         self.physics_pipeline.step(
             &self.gravity,
             &self.integration_parameters,
@@ -518,6 +542,7 @@ impl PhysicsWorld {
                 linear_velocity: [lv.x, lv.y, lv.z],
                 angular_velocity: [av.x, av.y, av.z],
                 collider: self.body_colliders.get(id).cloned().unwrap_or_default(),
+                kinematic: rb.is_kinematic(),
             });
         }
         bodies

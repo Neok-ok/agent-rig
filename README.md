@@ -1,4 +1,4 @@
-# agent-rig (increments 1–38)
+# agent-rig (increments 1–39)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1234,13 +1234,44 @@ cd /workspace/agent-rig && ./scripts/increment38-threejs.sh
 
 Writes `artifacts/increment38/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, lantern emissive, no env map, no tonemap, 800x450). Three.js ignores impulses; bodies still use our post-step dump poses (ball off its seat, seated lid, closed drawer).
 
+## Increment 39
+
+Same courtyard as increment 38 (bowl + rock + gold ball with clearcoat / anisotropy / iridescence, copper pillar with AO, glass pane with transmission + IOR + volume + dispersion, crate, sheen bench, hanging lantern + hinge motor 4/8, drawer + slider motor -2/6, charm + ball socket, drawer-open trigger, emissive lantern 16, directional + area light, `drawer_probe` raycast, `drawer_sweep` shapecast, crate lid + fixed joint, ball impulse `[1.8, 0.4, 0.5]`). The scene authors one kinematic `platform` (box size `[0.55, 0.06, 0.35]`, position `[-0.55, 0.04, -0.55]`, `kinematic: true`, `linear_velocity: [0.45, 0.0, 0.0]`, slate albedo `[0.38, 0.40, 0.44]`, roughness `0.55`). Spawned as Rapier `KinematicVelocityBased`; each physics step re-applies the authored linear velocity (constant authored velocity, not a one-shot). After 120 steps the platform has slid +X (`|platform.x - authored_x| > 0.4`; `0.45 * 2s ≈ 0.9`). The dump records the platform pose AND `kinematic: true` on that body. Three.js ignores kinematic; the platform uses the dump pose. No new lights. Camera stays increment-38. `increment38_scene()` stays platform-free and kinematic-free.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment39.sh
+```
+
+Writes:
+
+- `artifacts/increment39/scene.json` — increment-38 courtyard plus the kinematic platform
+- `artifacts/increment39/physics.json` — post-step dump (poses, contacts, collider kinds, joints, overlaps, `ray_hits`, `sweep_hits`, authored `impulses`, platform `kinematic: true`)
+- `artifacts/increment39/frame.png` — our renderer, 800x450, courtyard plus the sliding platform
+- `artifacts/increment39/threejs-frame.png` — stock Three.js, same pose (`MeshPhysicalMaterial`, no env map, no tonemap); platform from dump pose
+
+### CLI
+
+```bash
+agent-rig increment39 --out artifacts/increment39
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment39-threejs.sh
+```
+
+Writes `artifacts/increment39/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, lantern emissive, no env map, no tonemap, 800x450). Three.js ignores kinematic; bodies still use our post-step dump poses (slid platform, ball off its seat, seated lid, closed drawer).
+
 ## Scene format
 
 JSON object with `camera`, `lights`, `bodies`, optional `joints`, optional `triggers`, optional `raycasts`, optional `shapecasts`, and optional `impulses`.
 
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`; or `type: "area"` with `position`, `size` `[width, height]`, `color`, `intensity`, optional `normal` (default `[0,-1,0]`). Area softness comes from the authored `size`.
-- `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path, optional `clearcoat` + `clearcoat_roughness`, optional `sheen` + `sheen_roughness` + `sheen_color`, optional `anisotropy` + `anisotropy_rotation`, optional `iridescence` + `iridescence_ior` + `iridescence_thickness`, optional `dispersion`, optional `emissive` + `emissive_intensity`)
+- `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, optional `kinematic` (bool, serde default false, omitted when false; when true spawn as Rapier `kinematic_velocity_based` and re-apply authored `linear_velocity` every step), `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path, optional `clearcoat` + `clearcoat_roughness`, optional `sheen` + `sheen_roughness` + `sheen_color`, optional `anisotropy` + `anisotropy_rotation`, optional `iridescence` + `iridescence_ior` + `iridescence_thickness`, optional `dispersion`, optional `emissive` + `emissive_intensity`)
 - `triggers` (optional, default empty): `{ "id", "shape": { "type": "box", "size": [x,y,z] }, "position": [x,y,z] }`. Mapped to a Rapier sensor cuboid (`sensor = true`) on a fixed body. Sensors report overlaps and do not generate contact forces or push bodies. After stepping, the dump records `overlaps: [{ "trigger", "body" }]`. Rendered as a translucent cyan box (BLEND, alpha ~0.18).
 - `raycasts` (optional, default empty): `{ "id", "origin", "direction", "max_toi" }`. After stepping, the dump records `ray_hits: [{ "ray", "body", "point", "normal", "toi" }]` (hits only; misses omitted). Sensors are skipped. Rendered as a thin magenta segment plus a hit marker.
 - `shapecasts` (optional, default empty): `{ "id", "origin", "direction", "shape": { "type": "box", "size": [x,y,z] }, "max_toi" }`. Swept as a Rapier cuboid (half-extents = size/2) with `cast_shape`. After stepping, the dump records `sweep_hits: [{ "sweep", "body", "point", "normal", "toi" }]` (hits only; misses omitted). Sensors are skipped so a trigger cannot steal the hit. Rendered as a translucent box at the hit pose (`origin + dir * toi`) plus a small hit marker; on a miss the box is drawn at `origin + dir * max_toi`.
@@ -1333,3 +1364,5 @@ Increment 37: scene authors one crate lid + a Rapier fixed / weld joint (`type: 
 Increment 38: scene authors one impulse on the gold ball (`body: "ball"`, `linear: [1.8, 0.4, 0.5]`); increment 37 stays impulse-free; increment 18-37 scene JSON unchanged (no `"impulses"`); applied once at spawn (world-space, at COM); after 120 steps `|ball.x + 1.1| > 0.25` (rolls off the increment-37 seat); dump records the authored impulse (not post-step velocity) AND still has lid + fixed + hinge/slider/ball + `ray_hits` drawer_probe + `sweep_hits` drawer_sweep; courtyard + motors stay; `increment38` writes scene + physics dump + our PNG.
 
 Increment 38: scene authors one impulse on the gold ball (`linear: [1.8, 0.4, 0.5]`, applied once at spawn at COM); increment 37 stays impulse-free; increment 18-37 scene JSON unchanged (no `impulses` key); after stepping |ball.x + 1.1| > 0.25 (rolls off the seat); dump records the authored impulse; lid + fixed + drawer_probe + drawer_sweep + motors stay; `increment38` writes scene + physics dump + our PNG.
+
+Increment 39: scene authors one kinematic `platform` (box `[0.55, 0.06, 0.35]`, pose `[-0.55, 0.04, -0.55]`, `kinematic: true`, `linear_velocity: [0.45, 0, 0]`); increment 38 stays platform-free and kinematic-free; increment 18-38 scene JSON unchanged (no `"kinematic"`, no `"platform"`); spawned as Rapier `KinematicVelocityBased` and driven each step from authored velocity; after 120 steps `|platform.x - authored_x| > 0.4`; dump records the platform pose AND `kinematic: true`; lid + fixed + ball impulse + drawer_probe + drawer_sweep + motors stay; `increment39` writes scene + physics dump + our PNG.
