@@ -2,7 +2,7 @@ use rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::scene::{Joint, MeshCollider, Scene, Shape};
+use crate::scene::{Joint, MeshCollider, Scene, Shape, Trigger};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhysicsDump {
@@ -13,6 +13,15 @@ pub struct PhysicsDump {
     pub contacts: Vec<PhysicsContact>,
     #[serde(default)]
     pub joints: Vec<PhysicsJoint>,
+    /// Sensor overlaps after the last step. Empty when the scene has no triggers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overlaps: Vec<PhysicsOverlap>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhysicsOverlap {
+    pub trigger: String,
+    pub body: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +79,7 @@ struct PhysicsWorld {
     collider_set: ColliderSet,
     body_handles: HashMap<String, RigidBodyHandle>,
     collider_to_id: HashMap<ColliderHandle, String>,
+    trigger_collider_to_id: HashMap<ColliderHandle, String>,
     body_colliders: HashMap<String, String>,
     body_ids: Vec<String>,
     authored_joints: Vec<PhysicsJoint>,
@@ -92,6 +102,7 @@ impl PhysicsWorld {
             collider_set: ColliderSet::new(),
             body_handles: HashMap::new(),
             collider_to_id: HashMap::new(),
+            trigger_collider_to_id: HashMap::new(),
             body_colliders: HashMap::new(),
             body_ids: Vec::new(),
             authored_joints: Vec::new(),
@@ -181,6 +192,36 @@ impl PhysicsWorld {
             self.body_ids.push(body.id.clone());
         }
         self.populate_joints(scene)?;
+        self.populate_triggers(scene)?;
+        Ok(())
+    }
+
+    fn populate_triggers(&mut self, scene: &Scene) -> Result<(), String> {
+        for trigger in &scene.triggers {
+            let Trigger { id, shape, position } = trigger;
+            let [x, y, z] = *position;
+            let iso = Isometry::translation(x, y, z);
+            let rb = RigidBodyBuilder::fixed().position(iso).build();
+            let handle = self.rigid_body_set.insert(rb);
+            let collider = match shape {
+                Shape::Box { size } => ColliderBuilder::cuboid(
+                    size[0] * 0.5,
+                    size[1] * 0.5,
+                    size[2] * 0.5,
+                )
+                .sensor(true)
+                .build(),
+                _ => {
+                    return Err(format!(
+                        "trigger '{id}' only supports box shape, got {shape:?}"
+                    ))
+                }
+            };
+            let ch = self
+                .collider_set
+                .insert_with_parent(collider, handle, &mut self.rigid_body_set);
+            self.trigger_collider_to_id.insert(ch, id.clone());
+        }
         Ok(())
     }
 
@@ -442,6 +483,37 @@ impl PhysicsWorld {
         contacts
     }
 
+    fn snapshot_overlaps(&self) -> Vec<PhysicsOverlap> {
+        let mut overlaps = Vec::new();
+        for (h1, h2, intersecting) in self.narrow_phase.intersection_pairs() {
+            if !intersecting {
+                continue;
+            }
+            let (trigger, body) = if let Some(trig) = self.trigger_collider_to_id.get(&h1) {
+                let Some(body) = self.collider_to_id.get(&h2) else {
+                    continue;
+                };
+                (trig, body)
+            } else if let Some(trig) = self.trigger_collider_to_id.get(&h2) {
+                let Some(body) = self.collider_to_id.get(&h1) else {
+                    continue;
+                };
+                (trig, body)
+            } else {
+                continue;
+            };
+            overlaps.push(PhysicsOverlap {
+                trigger: trigger.clone(),
+                body: body.clone(),
+            });
+        }
+        overlaps.sort_by(|a, b| {
+            (&a.trigger, &a.body).cmp(&(&b.trigger, &b.body))
+        });
+        overlaps.dedup_by(|a, b| a.trigger == b.trigger && a.body == b.body);
+        overlaps
+    }
+
     fn snapshot_frame(&self, step: u32) -> TrajectoryFrame {
         TrajectoryFrame {
             step,
@@ -463,6 +535,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         bodies: world.snapshot_bodies(),
         contacts: world.snapshot_contacts(),
         joints: world.authored_joints.clone(),
+        overlaps: world.snapshot_overlaps(),
     })
 }
 

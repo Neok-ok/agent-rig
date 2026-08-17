@@ -508,6 +508,46 @@ struct EnvSh {
     c: [V3; 9],
 }
 
+
+/// Six-face box as triangles so BLEND rays hit surfaces, not the interior.
+fn trigger_box_shell(center: V3, half: V3) -> PrimKind {
+    let hx = half.x;
+    let hy = half.y;
+    let hz = half.z;
+    let c = |x: f32, y: f32, z: f32| V3::new(center.x + x, center.y + y, center.z + z);
+    let faces = [
+        // +X
+        [c(hx, -hy, -hz), c(hx, -hy, hz), c(hx, hy, hz)],
+        [c(hx, -hy, -hz), c(hx, hy, hz), c(hx, hy, -hz)],
+        // -X
+        [c(-hx, -hy, hz), c(-hx, -hy, -hz), c(-hx, hy, -hz)],
+        [c(-hx, -hy, hz), c(-hx, hy, -hz), c(-hx, hy, hz)],
+        // +Y
+        [c(-hx, hy, -hz), c(hx, hy, -hz), c(hx, hy, hz)],
+        [c(-hx, hy, -hz), c(hx, hy, hz), c(-hx, hy, hz)],
+        // -Y
+        [c(-hx, -hy, hz), c(hx, -hy, hz), c(hx, -hy, -hz)],
+        [c(-hx, -hy, hz), c(hx, -hy, -hz), c(-hx, -hy, -hz)],
+        // +Z
+        [c(-hx, -hy, hz), c(-hx, hy, hz), c(hx, hy, hz)],
+        [c(-hx, -hy, hz), c(hx, hy, hz), c(hx, -hy, hz)],
+        // -Z
+        [c(hx, -hy, -hz), c(hx, hy, -hz), c(-hx, hy, -hz)],
+        [c(hx, -hy, -hz), c(-hx, hy, -hz), c(-hx, -hy, -hz)],
+    ];
+    let uv = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+    let uvs = vec![uv; faces.len()];
+    let aabb_min = V3::new(center.x - hx, center.y - hy, center.z - hz);
+    let aabb_max = V3::new(center.x + hx, center.y + hy, center.z + hz);
+    PrimKind::Mesh {
+        tris: faces.to_vec(),
+        uvs,
+        tangents: None,
+        aabb_min,
+        aabb_max,
+    }
+}
+
 fn scene_prims(scene: &Scene) -> Vec<Prim> {
     let mut prims: Vec<Prim> = Vec::with_capacity(scene.bodies.len());
     for b in &scene.bodies {
@@ -721,6 +761,53 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             iridescence_ior,
             iridescence_thickness,
             dispersion,
+        });
+    }
+
+    // Authorable sensor volumes: translucent cyan boxes (BLEND), not new
+    // material features on existing bodies. Sensors stay at authored pose.
+    // Use a 12-triangle shell (not PrimKind::Box) so BLEND continuation
+    // hits the two faces instead of EPS-stepping through the OBB volume.
+    for trigger in &scene.triggers {
+        let Shape::Box { size } = &trigger.shape else {
+            continue;
+        };
+        let half = V3::new(size[0] * 0.5, size[1] * 0.5, size[2] * 0.5);
+        let center = V3::from_arr(trigger.position);
+        prims.push(Prim {
+            kind: trigger_box_shell(center, half),
+            center,
+            rotation: Quat::from_wxyz([1.0, 0.0, 0.0, 0.0]),
+            albedo: V3::new(0.15, 0.85, 0.95),
+            roughness: 0.35,
+            metallic: 0.0,
+            albedo_map: None,
+            mr_map: None,
+            normal_map: None,
+            normal_scale: 1.0,
+            emissive_factor: V3::new(0.0, 0.0, 0.0),
+            emissive_map: None,
+            ao_map: None,
+            ao_strength: 1.0,
+            alpha: 0.18,
+            alpha_mode: GltfAlphaMode::Blend,
+            alpha_cutoff: 0.5,
+            transmission: 0.0,
+            ior: 1.5,
+            attenuation_color: V3::new(1.0, 1.0, 1.0),
+            attenuation_distance: f32::INFINITY,
+            thickness: 0.0,
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.0,
+            sheen: 0.0,
+            sheen_roughness: 0.5,
+            sheen_color: V3::new(1.0, 1.0, 1.0),
+            anisotropy: 0.0,
+            anisotropy_rotation: 0.0,
+            iridescence: 0.0,
+            iridescence_ior: 1.3,
+            iridescence_thickness: 400.0,
+            dispersion: 0.0,
         });
     }
 

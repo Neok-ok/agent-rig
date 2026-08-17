@@ -588,6 +588,26 @@ for (const body of spec.bodies) {
   scene.add(mesh);
 }
 
+// Authorable sensor volumes: translucent cyan boxes. Not a new material
+// feature on existing bodies. Stay at authored pose (not dump bodies).
+for (const trigger of spec.triggers || []) {
+  if (!trigger.shape || trigger.shape.type !== 'box') continue;
+  const geom = new THREE.BoxGeometry(...trigger.shape.size);
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(0.15, 0.85, 0.95),
+    roughness: 0.35,
+    metalness: 0.0,
+    transparent: true,
+    opacity: 0.18,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.position.fromArray(trigger.position);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  scene.add(mesh);
+}
+
 document.body.appendChild(renderer.domElement);
 renderer.render(scene, camera);
 
