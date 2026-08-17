@@ -50,6 +50,10 @@ pub struct Scene {
     /// Omitted when empty so increment 18–50 JSON stay compact.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pickups: Vec<Pickup>,
+    /// Stop the sim when a condition is met. `--steps` is a max cap.
+    /// Omitted when none so increment 18–52 JSON stay compact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub play_until: Option<PlayUntil>,
     #[serde(skip, default)]
     pub mesh_search_dirs: Vec<PathBuf>,
 }
@@ -329,6 +333,13 @@ pub struct Pickup {
     pub body: String,
     pub trigger: String,
     pub by: String,
+}
+
+/// Stop the step loop when `kind` happens to `body`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlayUntil {
+    pub kind: String,
+    pub body: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5175,6 +5186,32 @@ pub fn increment52_scene() -> Scene {
     scene.camera.follow = Some(CameraFollow {
         body: "walker".into(),
         offset: [1.20, 0.90, 1.50],
+    });
+    scene
+}
+
+pub fn increment53_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        let mut v: serde_json::Value = serde_json::from_str(increment52_scene_json())
+            .expect("increment52 scene JSON is valid");
+        v["play_until"] = serde_json::json!({
+            "kind": "picked_up",
+            "body": "token"
+        });
+        serde_json::to_string_pretty(&v).expect("serialize increment53 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-52 courtyard plus play-until. Clones increment52_scene()
+/// so follow-cam / pickup / walker cannot drift. Adds ONLY play_until.
+/// increment52_scene() stays fixed-step (no play_until).
+pub fn increment53_scene() -> Scene {
+    let mut scene = increment52_scene();
+    scene.play_until = Some(PlayUntil {
+        kind: "picked_up".into(),
+        body: "token".into(),
     });
     scene
 }

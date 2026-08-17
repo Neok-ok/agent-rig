@@ -58,6 +58,8 @@ pub struct PhysicsDump {
     /// has no camera.follow so increment-51 dumps stay without a `camera` key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub camera: Option<DumpCamera>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped: Option<StoppedRecord>,
 }
 
 
@@ -65,6 +67,13 @@ pub struct PhysicsDump {
 pub struct DumpCamera {
     pub position: [f32; 3],
     pub look_at: [f32; 3],
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoppedRecord {
+    pub kind: String,
+    pub body: String,
+    pub at_step: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1322,16 +1331,31 @@ fn resolve_follow_camera(scene: &Scene, bodies: &[PhysicsBodyState]) -> Option<D
 
 pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, String> {
     let mut world = PhysicsWorld::from_scene(scene, dt)?;
+    let mut ran = 0u32;
+    let mut stopped = None;
     for i in 0..steps {
         world.apply_scheduled(scene, i)?;
         world.step();
         world.apply_pickups(scene, i)?;
+        ran = i + 1;
+        if let Some(until) = &scene.play_until {
+            if until.kind == "picked_up" {
+                if let Some(p) = world.picked_up.iter().find(|p| p.id == until.body) {
+                    stopped = Some(StoppedRecord {
+                        kind: until.kind.clone(),
+                        body: until.body.clone(),
+                        at_step: p.at_step,
+                    });
+                    break;
+                }
+            }
+        }
     }
     world.refresh_hinge_angles();
     let bodies = world.snapshot_bodies();
     let camera = resolve_follow_camera(scene, &bodies);
     Ok(PhysicsDump {
-        steps,
+        steps: ran,
         dt,
         gravity: [0.0, -9.81, 0.0],
         bodies,
@@ -1354,6 +1378,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         despawned: world.despawned.clone(),
         picked_up: world.picked_up.clone(),
         camera,
+        stopped,
     })
 }
 
