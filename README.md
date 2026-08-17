@@ -1,4 +1,4 @@
-# agent-rig (increments 1–53)
+# agent-rig (increments 1–54)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1693,6 +1693,30 @@ Writes:
 cargo run --release -- increment53 --out artifacts/increment53
 ```
 
+
+## Increment 54
+
+A second scene: a short stone lane, not the courtyard. `increment54_scene()` is authored from scratch (not `increment53_scene().clone()`). Coral walker walks +x to a gold token present from t=0; `play_until` `{ kind: picked_up, body: token }` stops the sim on pickup. Bodies are only ground (stone box), walker, token, and an optional teal block for scale — no courtyard leftovers. Follow-cam offset `[-1.00, 0.80, 1.60]`. `increment53_scene()` stays the courtyard. Increment 18–53 scene JSON is unchanged (no lane rest camera, no lane ground size). Three.js uses dump.camera when present.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment54.sh
+```
+
+Writes:
+
+- `artifacts/increment54/scene.json` — short stone lane with play_until and follow-cam
+- `artifacts/increment54/physics.json` — dump stopped at token pickup (`steps` 30–110, `stopped` picked_up/token); token gone, walker + ground present
+- `artifacts/increment54/frame.png` — our renderer, 800x450, follow-cam at pickup
+- `artifacts/increment54/threejs-frame.png` — stock Three.js, same pose and dump.camera
+
+### CLI
+
+```bash
+cargo run --release -- increment54 --out artifacts/increment54
+```
+
 ## Scene format
 
 JSON object with `camera`, `lights`, `bodies`, optional `joints`, optional `triggers`, optional `raycasts`, optional `shapecasts`, optional `impulses`, optional `record_contact_events`, optional `spawns`, and optional `despawns`.
@@ -1827,3 +1851,4 @@ Increment 51: increment51_scene clones increment50 and adds ONLY `token_zone` + 
 Increment 52: increment52_scene clones increment51 and adds ONLY `camera.follow` `{ body: walker, offset: [1.20, 0.90, 1.50] }`; authored rest camera stays `[1.85, 1.35, 3.15]` look_at `[0.35, 0.42, 1.55]` fov 40; increment51_scene stays follow-free (no `follow` key, dump has no `camera` key); increment 18-51 scene JSON unchanged; after 120 steps dump.camera.position ≈ `[1.249, 1.084, 2.949]` and look_at ≈ `[0.049, 0.334, 1.449]` from walker pose + offset; pickup leftovers stay (no token, picked_up token@30, spawned token@30, despawned bar@80); Three.js uses dump.camera when present; `increment52` writes scene + physics dump + our PNG.
 
 Increment 53: increment53_scene clones increment52 and adds ONLY `play_until` `{ kind: picked_up, body: token }`; `--steps` is a max cap; increment52_scene stays fixed-step (no `play_until`, dump omits `stopped`); increment 18-52 scene JSON unchanged (no `play_until` key); dump.steps is 30..=31, dump.stopped is `{ kind: picked_up, body: token }`, bar still present, token gone, picked_up token by walker, spawned token@30, despawned empty; follow-cam is walker pose + offset at pickup (not increment-52 120-step camera numbers); `increment53` writes scene + physics dump + our PNG.
+Increment 54: a second authored scene (short stone lane, not a courtyard clone); walker walks +x to a gold token present from t=0; play_until stops on pickup; increment53_scene stays the courtyard; increment 18-53 scene JSON unchanged; dump.steps 30..=110, dump.stopped picked_up/token, no token, walker+ground present, follow-cam; `increment54` writes scene + physics dump + our PNG.

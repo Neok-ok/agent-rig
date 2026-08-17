@@ -5215,3 +5215,158 @@ pub fn increment53_scene() -> Scene {
     });
     scene
 }
+
+fn lane_material(albedo: [f32; 3], roughness: f32, metallic: f32) -> Material {
+    Material {
+        albedo,
+        roughness,
+        metallic,
+        albedo_map: None,
+        clearcoat: 0.0,
+        clearcoat_roughness: 0.0,
+        sheen: 0.0,
+        sheen_roughness: 0.5,
+        sheen_color: [1.0, 1.0, 1.0],
+        anisotropy: 0.0,
+        anisotropy_rotation: 0.0,
+        iridescence: 0.0,
+        iridescence_ior: 1.3,
+        iridescence_thickness: 400.0,
+        dispersion: 0.0,
+        emissive: [0.0, 0.0, 0.0],
+        emissive_intensity: 0.0,
+    }
+}
+
+fn lane_body(
+    id: &str,
+    shape: Shape,
+    position: [f32; 3],
+    collision_groups: CollisionGroups,
+    material: Material,
+    controller: Option<CharacterController>,
+) -> Body {
+    Body {
+        id: id.into(),
+        shape,
+        position,
+        rotation_wxyz: [1.0, 0.0, 0.0, 0.0],
+        mass: 0.0,
+        linear_velocity: [0.0, 0.0, 0.0],
+        kinematic: false,
+        controller,
+        collision_groups,
+        material,
+    }
+}
+
+pub fn increment54_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        serde_json::to_string_pretty(&increment54_scene()).expect("serialize increment54 scene JSON")
+    })
+    .as_str()
+}
+
+/// A second scene: a short stone lane, authored from scratch.
+/// Not increment53_scene().clone(). Walker walks +x to a gold token
+/// present from t=0; play_until stops on pickup. increment53 stays
+/// the courtyard.
+pub fn increment54_scene() -> Scene {
+    Scene {
+        camera: Camera {
+            position: [0.20, 1.15, 2.20],
+            look_at: [0.20, 0.28, 0.00],
+            fov_y_deg: 40.0,
+            follow: Some(CameraFollow {
+                body: "walker".into(),
+                offset: [-1.00, 0.80, 1.60],
+            }),
+        },
+        lights: vec![Light::Directional {
+            direction: [-0.45, -1.0, -0.35],
+            color: [1.0, 0.97, 0.92],
+            intensity: 3.0,
+        }],
+        bodies: vec![
+            lane_body(
+                "ground",
+                Shape::Box {
+                    size: [3.00, 0.04, 1.60],
+                },
+                [0.00, -0.02, 0.00],
+                CollisionGroups {
+                    membership: 1,
+                    filter: 0xFFFF,
+                },
+                lane_material([0.42, 0.40, 0.36], 0.8, 0.0),
+                None,
+            ),
+            lane_body(
+                "walker",
+                Shape::Box {
+                    size: [0.18, 0.36, 0.18],
+                },
+                [-0.20, 0.20, 0.00],
+                CollisionGroups {
+                    membership: 2,
+                    filter: 1,
+                },
+                lane_material([0.85, 0.22, 0.48], 0.5, 0.0),
+                Some(CharacterController {
+                    desired_velocity: [0.55, 0.0, 0.0],
+                }),
+            ),
+            lane_body(
+                "token",
+                Shape::Sphere { radius: 0.10 },
+                [0.70, 0.12, 0.00],
+                CollisionGroups {
+                    membership: 4,
+                    filter: 0xFFFF,
+                },
+                lane_material([0.95, 0.78, 0.22], 0.35, 0.85),
+                None,
+            ),
+            lane_body(
+                "block",
+                Shape::Box {
+                    size: [0.16, 0.30, 0.16],
+                },
+                [0.15, 0.15, -0.55],
+                CollisionGroups {
+                    membership: 4,
+                    filter: 0xFFFF,
+                },
+                lane_material([0.15, 0.55, 0.55], 0.6, 0.0),
+                None,
+            ),
+        ],
+        joints: vec![],
+        triggers: vec![Trigger {
+            id: "token_zone".into(),
+            shape: Shape::Box {
+                size: [0.40, 0.40, 0.40],
+            },
+            position: [0.70, 0.12, 0.00],
+        }],
+        raycasts: vec![],
+        ray_hits: vec![],
+        shapecasts: vec![],
+        sweep_hits: vec![],
+        impulses: vec![],
+        record_contact_events: false,
+        spawns: vec![],
+        despawns: vec![],
+        pickups: vec![Pickup {
+            body: "token".into(),
+            trigger: "token_zone".into(),
+            by: "walker".into(),
+        }],
+        play_until: Some(PlayUntil {
+            kind: "picked_up".into(),
+            body: "token".into(),
+        }),
+        mesh_search_dirs: vec![],
+    }
+}

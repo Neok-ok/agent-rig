@@ -1,0 +1,151 @@
+{
+  "steps": 67,
+  "dt": 0.016666668,
+  "gravity": [
+    0.0,
+    -9.81,
+    0.0
+  ],
+  "bodies": [
+    {
+      "id": "ground",
+      "position": [
+        0.0,
+        -0.02,
+        0.0
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "cuboid",
+      "collision_groups": {
+        "membership": 1,
+        "filter": 65535
+      }
+    },
+    {
+      "id": "walker",
+      "position": [
+        0.41488123,
+        0.18370537,
+        0.00053014077
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.5441522,
+        0.00032186505,
+        -0.0044652
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "cuboid",
+      "kinematic": true,
+      "collision_groups": {
+        "membership": 2,
+        "filter": 1
+      }
+    },
+    {
+      "id": "block",
+      "position": [
+        0.15,
+        0.15,
+        -0.55
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "cuboid",
+      "collision_groups": {
+        "membership": 4,
+        "filter": 65535
+      }
+    }
+  ],
+  "contacts": [],
+  "joints": [],
+  "overlaps": [
+    {
+      "trigger": "token_zone",
+      "body": "ground"
+    },
+    {
+      "trigger": "token_zone",
+      "body": "walker"
+    }
+  ],
+  "controllers": [
+    {
+      "id": "walker",
+      "grounded": true,
+      "desired_velocity": [
+        0.55,
+        0.0,
+        0.0
+      ],
+      "effective_translation": [
+        0.009069213,
+        0.0000053657204,
+        -0.00007442001
+      ]
+    }
+  ],
+  "picked_up": [
+    {
+      "id": "token",
+      "by": "walker",
+      "at_step": 66
+    }
+  ],
+  "camera": {
+    "position": [
+      -0.5851188,
+      0.9837054,
+      1.6005301
+    ],
+    "look_at": [
+      0.41488123,
+      0.33370537,
+      0.00053014077
+    ]
+  },
+  "stopped": {
+    "kind": "picked_up",
+    "body": "token",
+    "at_step": 66
+  }
+}
