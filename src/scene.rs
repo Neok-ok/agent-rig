@@ -31,6 +31,11 @@ pub struct Scene {
     /// Authorable one-shot impulses. Applied once at spawn (world-space, at COM).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub impulses: Vec<Impulse>,
+    /// When true, the physics dump records started/stopped contact events
+    /// across every step. Serde default false; omitted when false so
+    /// increment 18-46 JSON stay compact.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub record_contact_events: bool,
     #[serde(skip, default)]
     pub mesh_search_dirs: Vec<PathBuf>,
 }
@@ -4745,5 +4750,21 @@ pub fn increment46_scene() -> Scene {
     scene.camera.position = [1.85, 1.35, 3.15];
     scene.camera.look_at = [0.35, 0.42, 1.55];
     scene.camera.fov_y_deg = 40.0;
+    scene
+}
+
+pub const INCREMENT47_SCENE_JSON: &str = INCREMENT46_SCENE_JSON;
+
+pub fn increment47_scene_json() -> &'static str {
+    INCREMENT47_SCENE_JSON
+}
+
+/// Increment-46 courtyard with contact-event recording enabled.
+/// Clones increment46_scene() so camera / bodies / joints / impulses
+/// cannot drift. ONLY sets `record_contact_events`. No visual change.
+/// increment46_scene() stays event-free.
+pub fn increment47_scene() -> Scene {
+    let mut scene = increment46_scene();
+    scene.record_contact_events = true;
     scene
 }

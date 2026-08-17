@@ -2,6 +2,7 @@ use rapier3d::parry::query::ShapeCastOptions;
 use rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use crate::scene::{Impulse, Joint, MeshCollider, RayHit, Scene, Shape, SweepHit, Trigger};
 
@@ -29,6 +30,17 @@ pub struct PhysicsDump {
     /// Impulse joints removed because reaction exceeded `break_force`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub broken_joints: Vec<BrokenJoint>,
+    /// Started/stopped contacts collected across every step.
+    /// Empty (and omitted) unless the scene set `record_contact_events`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contact_events: Vec<ContactEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContactEvent {
+    pub kind: String,
+    pub body_a: String,
+    pub body_b: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +143,8 @@ struct PhysicsWorld {
     /// Authored-joint indices removed after a break_force snap.
     broken_indices: Vec<usize>,
     broken_joints: Vec<BrokenJoint>,
+    record_contact_events: bool,
+    contact_events: Vec<ContactEvent>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
     physics_pipeline: PhysicsPipeline,
@@ -159,6 +173,8 @@ impl PhysicsWorld {
             distance_handles: Vec::new(),
             broken_indices: Vec::new(),
             broken_joints: Vec::new(),
+            record_contact_events: false,
+            contact_events: Vec::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
                 let mut p = IntegrationParameters::default();
@@ -175,6 +191,7 @@ impl PhysicsWorld {
             query_pipeline: QueryPipeline::new(),
         };
         world.populate(scene)?;
+        world.record_contact_events = scene.record_contact_events;
         Ok(world)
     }
 
@@ -208,7 +225,7 @@ impl PhysicsWorld {
 
         // Density from authored mass so inertia is non-zero (needed for body-body hits).
         let kind = body.shape.collider_kind().to_string();
-        let collider = match &body.shape {
+        let mut collider = match &body.shape {
             Shape::Box { size } => {
                 let mut b = ColliderBuilder::cuboid(size[0] * 0.5, size[1] * 0.5, size[2] * 0.5)
                     .friction(0.35)
@@ -247,6 +264,9 @@ impl PhysicsWorld {
                 b.build()
             }
         };
+        if scene.record_contact_events {
+            collider.set_active_events(ActiveEvents::COLLISION_EVENTS);
+        }
         let ch = self.collider_set.insert_with_parent(collider, handle, &mut self.rigid_body_set);
             self.body_handles.insert(body.id.clone(), handle);
             self.collider_to_id.insert(ch, body.id.clone());
@@ -698,21 +718,61 @@ impl PhysicsWorld {
         for (handle, vel) in kinematic_drives {
             self.rigid_body_set[handle].set_linvel(vel, true);
         }
-        self.physics_pipeline.step(
-            &self.gravity,
-            &self.integration_parameters,
-            &mut self.island_manager,
-            &mut self.broad_phase,
-            &mut self.narrow_phase,
-            &mut self.rigid_body_set,
-            &mut self.collider_set,
-            &mut self.impulse_joint_set,
-            &mut self.multibody_joint_set,
-            &mut self.ccd_solver,
-            Some(&mut self.query_pipeline),
-            &(),
-            &(),
-        );
+        if self.record_contact_events {
+            let collector = CollisionCollector {
+                events: Mutex::new(Vec::new()),
+            };
+            self.physics_pipeline.step(
+                &self.gravity,
+                &self.integration_parameters,
+                &mut self.island_manager,
+                &mut self.broad_phase,
+                &mut self.narrow_phase,
+                &mut self.rigid_body_set,
+                &mut self.collider_set,
+                &mut self.impulse_joint_set,
+                &mut self.multibody_joint_set,
+                &mut self.ccd_solver,
+                Some(&mut self.query_pipeline),
+                &(),
+                &collector,
+            );
+            let raw = collector.events.into_inner().expect("collision collector mutex");
+            for event in raw {
+                let Some(id_a) = self.collider_to_id.get(&event.collider1()) else {
+                    continue;
+                };
+                let Some(id_b) = self.collider_to_id.get(&event.collider2()) else {
+                    continue;
+                };
+                let kind = if event.started() {
+                    "started"
+                } else {
+                    "stopped"
+                };
+                self.contact_events.push(ContactEvent {
+                    kind: kind.into(),
+                    body_a: id_a.clone(),
+                    body_b: id_b.clone(),
+                });
+            }
+        } else {
+            self.physics_pipeline.step(
+                &self.gravity,
+                &self.integration_parameters,
+                &mut self.island_manager,
+                &mut self.broad_phase,
+                &mut self.narrow_phase,
+                &mut self.rigid_body_set,
+                &mut self.collider_set,
+                &mut self.impulse_joint_set,
+                &mut self.multibody_joint_set,
+                &mut self.ccd_solver,
+                Some(&mut self.query_pipeline),
+                &(),
+                &(),
+            );
+        }
         self.break_overloaded_distance_joints();
     }
 
@@ -999,6 +1059,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         sweep_hits: world.snapshot_sweep_hits(scene),
         impulses: scene.impulses.clone(),
         broken_joints: world.broken_joints.clone(),
+        contact_events: world.contact_events.clone(),
     })
 }
 
@@ -1030,4 +1091,30 @@ pub fn simulate_trajectory(
         frame_stride,
         frames,
     })
+}
+
+struct CollisionCollector {
+    events: Mutex<Vec<CollisionEvent>>,
+}
+
+impl EventHandler for CollisionCollector {
+    fn handle_collision_event(
+        &self,
+        _bodies: &RigidBodySet,
+        _colliders: &ColliderSet,
+        event: CollisionEvent,
+        _contact_pair: Option<&ContactPair>,
+    ) {
+        self.events.lock().expect("collision collector").push(event);
+    }
+
+    fn handle_contact_force_event(
+        &self,
+        _dt: Real,
+        _bodies: &RigidBodySet,
+        _colliders: &ColliderSet,
+        _contact_pair: &ContactPair,
+        _total_force_magnitude: Real,
+    ) {
+    }
 }
