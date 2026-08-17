@@ -52,6 +52,9 @@ pub struct PhysicsJoint {
     /// Current hinge angle (radians) after the last step. Hinges only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle: Option<f32>,
+    /// Authored rope rest / max length. Distance joints only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rest_length: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -348,6 +351,7 @@ impl PhysicsWorld {
                         motor_target_velocity: Some(*motor_target_velocity),
                         motor_max_force: Some(*motor_max_force),
                         angle: None,
+                        rest_length: None,
                     });
                     self.hinge_handles.push((dump_idx, handle));
                 }
@@ -430,6 +434,7 @@ impl PhysicsWorld {
                         motor_target_velocity: Some(*motor_target_velocity),
                         motor_max_force: Some(*motor_max_force),
                         angle: None,
+                        rest_length: None,
                     });
                 }
                 Joint::Ball {
@@ -470,6 +475,7 @@ impl PhysicsWorld {
                         motor_target_velocity: None,
                         motor_max_force: None,
                         angle: None,
+                        rest_length: None,
                     });
                 }
                 Joint::Fixed {
@@ -509,6 +515,58 @@ impl PhysicsWorld {
                         motor_target_velocity: None,
                         motor_max_force: None,
                         angle: None,
+                        rest_length: None,
+                    });
+                }
+                Joint::Distance {
+                    body_a,
+                    body_b,
+                    anchor,
+                    rest_length,
+                } => {
+                    let ha = *self.body_handles.get(body_a).ok_or_else(|| {
+                        format!("distance body_a '{body_a}' not found")
+                    })?;
+                    let hb = *self.body_handles.get(body_b).ok_or_else(|| {
+                        format!("distance body_b '{body_b}' not found")
+                    })?;
+                    let rb_a = &self.rigid_body_set[ha];
+                    let rb_b = &self.rigid_body_set[hb];
+                    let world_anchor = point![anchor[0], anchor[1], anchor[2]];
+                    // Gate-top (world anchor) in body_a local space — same
+                    // helper as hinge/slider/ball/fixed. The rope hangs the
+                    // child COM, so local_b is body_b origin (the spawn
+                    // world-anchor sits 0.12 above the bob).
+                    let local_a = rb_a.position().inverse() * world_anchor;
+                    let com_b = point![
+                        rb_b.translation().x,
+                        rb_b.translation().y,
+                        rb_b.translation().z,
+                    ];
+                    let local_b = rb_b.position().inverse() * com_b;
+                    let rope = RopeJointBuilder::new(*rest_length)
+                        .local_anchor1(local_a)
+                        .local_anchor2(local_b)
+                        .contacts_enabled(false)
+                        .build();
+                    self.impulse_joint_set.insert(ha, hb, rope, true);
+                    if let Some(rb) = self.rigid_body_set.get_mut(hb) {
+                        // Hang damper so the bob settles on the rope
+                        // instead of yo-yoing forever.
+                        rb.set_angular_damping(3.0);
+                        rb.set_linear_damping(1.0);
+                    }
+                    self.authored_joints.push(PhysicsJoint {
+                        kind: "distance".into(),
+                        body_a: body_a.clone(),
+                        body_b: body_b.clone(),
+                        anchor: *anchor,
+                        axis: [0.0, 0.0, 0.0],
+                        limits: None,
+                        motor_target_velocity: None,
+                        motor_max_force: None,
+                        angle: None,
+                        rest_length: Some(*rest_length),
                     });
                 }
             }
