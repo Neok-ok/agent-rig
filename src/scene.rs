@@ -5510,3 +5510,53 @@ pub fn increment57_scene() -> Scene {
     });
     scene
 }
+
+pub fn increment58_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        let mut v: serde_json::Value = serde_json::from_str(increment57_scene_json())
+            .expect("increment57 scene JSON is valid");
+        let bodies = v["bodies"].as_array_mut().expect("increment57 has bodies");
+        bodies.push(serde_json::json!({
+            "id": "npc",
+            "shape": { "type": "box", "size": [0.18, 0.36, 0.18] },
+            "position": [1.35, 0.20, 0.00],
+            "rotation_wxyz": [1.0, 0.0, 0.0, 0.0],
+            "mass": 0.0,
+            "linear_velocity": [0.0, 0.0, 0.0],
+            "controller": { "desired_velocity": [-0.40, 0.0, 0.0] },
+            "collision_groups": { "membership": 2, "filter": 1 },
+            "material": {
+                "albedo": [0.90, 0.55, 0.18],
+                "roughness": 0.45,
+                "metallic": 0.0
+            }
+        }));
+        serde_json::to_string_pretty(&v).expect("serialize increment58 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-57 lane plus a second walker / NPC. Clones increment57_scene()
+/// so hold / drop / token / token_zone / exit / play_until / follow-cam
+/// cannot drift. Adds ONLY body `npc`.
+/// increment57_scene() stays npc-free.
+pub fn increment58_scene() -> Scene {
+    let mut scene = increment57_scene();
+    scene.bodies.push(lane_body(
+        "npc",
+        Shape::Box {
+            size: [0.18, 0.36, 0.18],
+        },
+        [1.35, 0.20, 0.00],
+        CollisionGroups {
+            membership: 2,
+            filter: 1,
+        },
+        lane_material([0.90, 0.55, 0.18], 0.45, 0.0),
+        Some(CharacterController {
+            desired_velocity: [-0.40, 0.0, 0.0],
+        }),
+    ));
+    scene
+}

@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 use agent_rig::{
     render_scene_file, run_increment1, run_increment2, run_increment3, run_increment4,
-    run_increment5, run_increment6, run_increment7, run_increment8, run_increment9, run_increment10, run_increment11, run_increment12, run_increment13, run_increment14, run_increment15, run_increment16, run_increment17, run_increment18, run_increment19, run_increment20, run_increment21, run_increment22, run_increment23, run_increment24, run_increment25, run_increment26, run_increment27, run_increment28, run_increment29, run_increment30, run_increment31, run_increment32, run_increment33, run_increment34, run_increment35, run_increment36, run_increment37, run_increment38, run_increment39, run_increment40, run_increment41, run_increment42, run_increment43, run_increment44, run_increment45, run_increment46, run_increment47, run_increment48, run_increment49, run_increment50, run_increment51, run_increment52, run_increment53, run_increment54, run_increment55, run_increment56, run_increment57, sim_scene_file, step_scene_file, DEFAULT_DT,
+    run_increment5, run_increment6, run_increment7, run_increment8, run_increment9, run_increment10, run_increment11, run_increment12, run_increment13, run_increment14, run_increment15, run_increment16, run_increment17, run_increment18, run_increment19, run_increment20, run_increment21, run_increment22, run_increment23, run_increment24, run_increment25, run_increment26, run_increment27, run_increment28, run_increment29, run_increment30, run_increment31, run_increment32, run_increment33, run_increment34, run_increment35, run_increment36, run_increment37, run_increment38, run_increment39, run_increment40, run_increment41, run_increment42, run_increment43, run_increment44, run_increment45, run_increment46, run_increment47, run_increment48, run_increment49, run_increment50, run_increment51, run_increment52, run_increment53, run_increment54, run_increment55, run_increment56, run_increment57, run_increment58, sim_scene_file, step_scene_file, DEFAULT_DT,
     DEFAULT_STEPS, FRAME_HEIGHT, FRAME_WIDTH, INCREMENT2_STEPS, INCREMENT3_FRAMES, INCREMENT3_STRIDE,
     INCREMENT4_STEPS, INCREMENT5_STEPS, INCREMENT6_STEPS, INCREMENT7_STEPS, INCREMENT8_STEPS,
     INCREMENT9_STEPS, INCREMENT10_STEPS, INCREMENT11_STEPS, INCREMENT12_STEPS, INCREMENT13_STEPS,
-    INCREMENT14_STEPS, INCREMENT15_FRAMES, INCREMENT15_STRIDE, INCREMENT16_STEPS, INCREMENT17_STEPS, INCREMENT18_STEPS, INCREMENT19_STEPS, INCREMENT20_STEPS, INCREMENT21_STEPS, INCREMENT22_STEPS, INCREMENT23_STEPS, INCREMENT24_STEPS, INCREMENT25_STEPS, INCREMENT26_STEPS, INCREMENT27_STEPS, INCREMENT28_STEPS, INCREMENT29_STEPS, INCREMENT30_STEPS, INCREMENT31_STEPS, INCREMENT32_STEPS, INCREMENT33_STEPS, INCREMENT34_STEPS, INCREMENT35_STEPS, INCREMENT36_STEPS, INCREMENT37_STEPS, INCREMENT38_STEPS, INCREMENT39_STEPS, INCREMENT40_STEPS, INCREMENT41_STEPS, INCREMENT42_STEPS, INCREMENT43_STEPS, INCREMENT44_STEPS, INCREMENT45_STEPS, INCREMENT46_STEPS, INCREMENT47_STEPS, INCREMENT48_STEPS, INCREMENT49_STEPS, INCREMENT50_STEPS, INCREMENT51_STEPS, INCREMENT52_STEPS, INCREMENT53_STEPS, INCREMENT54_STEPS, INCREMENT55_STEPS, INCREMENT56_STEPS, INCREMENT57_STEPS,
+    INCREMENT14_STEPS, INCREMENT15_FRAMES, INCREMENT15_STRIDE, INCREMENT16_STEPS, INCREMENT17_STEPS, INCREMENT18_STEPS, INCREMENT19_STEPS, INCREMENT20_STEPS, INCREMENT21_STEPS, INCREMENT22_STEPS, INCREMENT23_STEPS, INCREMENT24_STEPS, INCREMENT25_STEPS, INCREMENT26_STEPS, INCREMENT27_STEPS, INCREMENT28_STEPS, INCREMENT29_STEPS, INCREMENT30_STEPS, INCREMENT31_STEPS, INCREMENT32_STEPS, INCREMENT33_STEPS, INCREMENT34_STEPS, INCREMENT35_STEPS, INCREMENT36_STEPS, INCREMENT37_STEPS, INCREMENT38_STEPS, INCREMENT39_STEPS, INCREMENT40_STEPS, INCREMENT41_STEPS, INCREMENT42_STEPS, INCREMENT43_STEPS, INCREMENT44_STEPS, INCREMENT45_STEPS, INCREMENT46_STEPS, INCREMENT47_STEPS, INCREMENT48_STEPS, INCREMENT49_STEPS, INCREMENT50_STEPS, INCREMENT51_STEPS, INCREMENT52_STEPS, INCREMENT53_STEPS, INCREMENT54_STEPS, INCREMENT55_STEPS, INCREMENT56_STEPS, INCREMENT57_STEPS, INCREMENT58_STEPS,
 };
 use clap::{Parser, Subcommand};
 
@@ -670,6 +670,17 @@ enum Command {
         #[arg(long, default_value_t = FRAME_HEIGHT)]
         height: u32,
     },
+    /// Increment 58: amber npc walks -x and passes the coral walker.
+    Increment58 {
+        #[arg(long, default_value = "artifacts/increment58")]
+        out: PathBuf,
+        #[arg(long, default_value_t = INCREMENT58_STEPS)]
+        steps: u32,
+        #[arg(long, default_value_t = FRAME_WIDTH)]
+        width: u32,
+        #[arg(long, default_value_t = FRAME_HEIGHT)]
+        height: u32,
+    },
     /// Increment 3: write ramp scene, simulate over time, render frame PNGs.
     Increment3 {
         #[arg(long, default_value = "artifacts/increment3")]
@@ -1069,6 +1080,12 @@ fn main() {
             width,
             height,
         }) => run_increment57(&out, steps, DEFAULT_DT, width, height).map(Some),
+        Some(Command::Increment58 {
+            out,
+            steps,
+            width,
+            height,
+        }) => run_increment58(&out, steps, DEFAULT_DT, width, height).map(Some),
         Some(Command::Increment3 {
             out,
             frames,
@@ -1099,7 +1116,7 @@ fn main() {
             run_increment1(&args.out, args.steps, DEFAULT_DT, args.width, args.height).map(Some)
         }
         None => {
-            eprintln!("usage: agent-rig <demo|increment2|increment3|increment4|increment5|increment6|increment7|increment8|increment9|increment10|increment11|increment12|increment13|increment14|increment15|increment16|increment17|increment18|increment19|increment20|increment21|increment22|increment23|increment24|increment25|increment26|increment27|increment28|increment29|increment30|increment31|increment32|increment33|increment34|increment35|increment36|increment37|increment38|increment39|increment40|increment41|increment42|increment43|increment44|increment45|increment46|increment47|increment48|increment49|increment50|increment51|increment52|increment53|increment54|increment55|increment56|increment57|sim|step|render> …  (or --demo for increment 1)");
+            eprintln!("usage: agent-rig <demo|increment2|increment3|increment4|increment5|increment6|increment7|increment8|increment9|increment10|increment11|increment12|increment13|increment14|increment15|increment16|increment17|increment18|increment19|increment20|increment21|increment22|increment23|increment24|increment25|increment26|increment27|increment28|increment29|increment30|increment31|increment32|increment33|increment34|increment35|increment36|increment37|increment38|increment39|increment40|increment41|increment42|increment43|increment44|increment45|increment46|increment47|increment48|increment49|increment50|increment51|increment52|increment53|increment54|increment55|increment56|increment57|increment58|sim|step|render> …  (or --demo for increment 1)");
             std::process::exit(2);
         }
     };
