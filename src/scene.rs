@@ -50,6 +50,12 @@ pub struct Scene {
     /// Omitted when empty so increment 18–50 JSON stay compact.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pickups: Vec<Pickup>,
+    /// Drop-on-overlap. After snap_held, if `body` is held by `by` and
+    /// `by` overlaps `trigger`, unbind the hold and place `body` at
+    /// carrier + drop_offset. Omitted when empty so increment 18–56
+    /// JSON stay compact.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drops: Vec<DropEvent>,
     /// Stop the sim when a condition is met. `--steps` is a max cap.
     /// Omitted when none so increment 18–52 JSON stay compact.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -350,6 +356,17 @@ impl Default for Pickup {
             hold_offset: [0.0, 0.0, 0.0],
         }
     }
+}
+
+/// Unbind a held `body` when `by` overlaps `trigger`, then place it
+/// at carrier.pos + drop_offset. Named DropEvent so it does not
+/// clash with Rust's `drop`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DropEvent {
+    pub body: String,
+    pub trigger: String,
+    pub by: String,
+    pub drop_offset: [f32; 3],
 }
 
 /// Stop the step loop when `kind` happens to `body`.
@@ -5388,6 +5405,7 @@ pub fn increment54_scene() -> Scene {
             hold: false,
             hold_offset: [0.0, 0.0, 0.0],
         }],
+        drops: vec![],
         play_until: Some(PlayUntil {
             kind: "picked_up".into(),
             body: "token".into(),
@@ -5459,5 +5477,36 @@ pub fn increment56_scene() -> Scene {
     let mut scene = increment55_scene();
     scene.pickups[0].hold = true;
     scene.pickups[0].hold_offset = [0.16, 0.22, 0.00];
+    scene
+}
+
+pub fn increment57_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        let mut v: serde_json::Value = serde_json::from_str(increment56_scene_json())
+            .expect("increment56 scene JSON is valid");
+        v["drops"] = serde_json::json!([{
+            "body": "token",
+            "trigger": "exit",
+            "by": "walker",
+            "drop_offset": [0.22, -0.06, 0.00]
+        }]);
+        serde_json::to_string_pretty(&v).expect("serialize increment57 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-56 lane plus authorable drop. Clones increment56_scene()
+/// so hold pickup / lane bodies / token / token_zone / exit /
+/// play_until / follow-cam cannot drift. Adds ONLY `drops`.
+/// increment56_scene() stays hold-through-stop (no drops key).
+pub fn increment57_scene() -> Scene {
+    let mut scene = increment56_scene();
+    scene.drops.push(DropEvent {
+        body: "token".into(),
+        trigger: "exit".into(),
+        by: "walker".into(),
+        drop_offset: [0.22, -0.06, 0.00],
+    });
     scene
 }

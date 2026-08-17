@@ -58,6 +58,10 @@ pub struct PhysicsDump {
     /// empty so increment-55 dumps stay without a `held` key.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub held: Vec<HeldRecord>,
+    /// Bodies dropped from a live hold. Omitted when empty so
+    /// increment-56 dumps stay without a `dropped` key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dropped: Vec<DroppedRecord>,
     /// Resolved follow-cam after the last step. Omitted when the scene
     /// has no camera.follow so increment-51 dumps stay without a `camera` key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -89,6 +93,13 @@ pub struct PickupRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeldRecord {
+    pub id: String,
+    pub by: String,
+    pub at_step: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DroppedRecord {
     pub id: String,
     pub by: String,
     pub at_step: u32,
@@ -243,6 +254,7 @@ struct PhysicsWorld {
     picked_up: Vec<PickupRecord>,
     held: Vec<HeldRecord>,
     holds: Vec<HeldBinding>,
+    dropped: Vec<DroppedRecord>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
     physics_pipeline: PhysicsPipeline,
@@ -281,6 +293,7 @@ impl PhysicsWorld {
             picked_up: Vec::new(),
             held: Vec::new(),
             holds: Vec::new(),
+            dropped: Vec::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
                 let mut p = IntegrationParameters::default();
@@ -571,6 +584,48 @@ impl PhysicsWorld {
             if let Some(rb) = self.rigid_body_set.get_mut(item) {
                 rb.set_translation(pos, true);
             }
+        }
+    }
+
+    fn apply_drops(&mut self, scene: &Scene, step: u32) {
+        if scene.drops.is_empty() {
+            return;
+        }
+        let overlaps = self.snapshot_overlaps();
+        let mut to_drop: Vec<(String, String, [f32; 3])> = Vec::new();
+        for d in &scene.drops {
+            if self.dropped.iter().any(|r| r.id == d.body) {
+                continue;
+            }
+            let live = self.holds.iter().any(|h| h.id == d.body && h.by == d.by);
+            if !live {
+                continue;
+            }
+            if overlaps
+                .iter()
+                .any(|o| o.trigger == d.trigger && o.body == d.by)
+            {
+                to_drop.push((d.body.clone(), d.by.clone(), d.drop_offset));
+            }
+        }
+        for (id, by, offset) in to_drop {
+            self.holds.retain(|h| !(h.id == id && h.by == by));
+            let Some(&carrier) = self.body_handles.get(&by) else {
+                continue;
+            };
+            let Some(&item) = self.body_handles.get(&id) else {
+                continue;
+            };
+            let t = *self.rigid_body_set[carrier].translation();
+            let pos = vector![t.x + offset[0], t.y + offset[1], t.z + offset[2]];
+            if let Some(rb) = self.rigid_body_set.get_mut(item) {
+                rb.set_translation(pos, true);
+            }
+            self.dropped.push(DroppedRecord {
+                id,
+                by,
+                at_step: step,
+            });
         }
     }
 
@@ -1396,6 +1451,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         world.apply_scheduled(scene, i)?;
         world.step();
         world.apply_pickups(scene, i)?;
+        world.apply_drops(scene, i);
         ran = i + 1;
         if let Some(until) = &scene.play_until {
             if until.kind == "picked_up" {
@@ -1447,6 +1503,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         despawned: world.despawned.clone(),
         picked_up: world.picked_up.clone(),
         held: world.held.clone(),
+        dropped: world.dropped.clone(),
         camera,
         stopped,
     })
@@ -1475,6 +1532,7 @@ pub fn simulate_trajectory(
             world.apply_scheduled(scene, step)?;
             world.step();
             world.apply_pickups(scene, step)?;
+            world.apply_drops(scene, step);
             step += 1;
         }
         frames.push(world.snapshot_frame(i * frame_stride));

@@ -1,0 +1,210 @@
+{
+  "steps": 100,
+  "dt": 0.016666668,
+  "gravity": [
+    0.0,
+    -9.81,
+    0.0
+  ],
+  "bodies": [
+    {
+      "id": "ground",
+      "position": [
+        0.0,
+        -0.02,
+        0.0
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "cuboid",
+      "collision_groups": {
+        "membership": 1,
+        "filter": 65535
+      }
+    },
+    {
+      "id": "walker",
+      "position": [
+        0.7152572,
+        0.18371913,
+        0.00090948486
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.52849525,
+        0.00062137836,
+        0.010752525
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "cuboid",
+      "kinematic": true,
+      "collision_groups": {
+        "membership": 2,
+        "filter": 1
+      }
+    },
+    {
+      "id": "token",
+      "position": [
+        0.9352572,
+        0.123719126,
+        0.00090948486
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "ball",
+      "collision_groups": {
+        "membership": 4,
+        "filter": 65535
+      }
+    },
+    {
+      "id": "block",
+      "position": [
+        0.15,
+        0.15,
+        -0.55
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "cuboid",
+      "collision_groups": {
+        "membership": 4,
+        "filter": 65535
+      }
+    }
+  ],
+  "contacts": [],
+  "joints": [],
+  "overlaps": [
+    {
+      "trigger": "exit",
+      "body": "ground"
+    },
+    {
+      "trigger": "exit",
+      "body": "token"
+    },
+    {
+      "trigger": "exit",
+      "body": "walker"
+    },
+    {
+      "trigger": "token_zone",
+      "body": "ground"
+    },
+    {
+      "trigger": "token_zone",
+      "body": "token"
+    },
+    {
+      "trigger": "token_zone",
+      "body": "walker"
+    }
+  ],
+  "controllers": [
+    {
+      "id": "walker",
+      "grounded": true,
+      "desired_velocity": [
+        0.55,
+        0.0,
+        0.0
+      ],
+      "effective_translation": [
+        0.008808251,
+        0.000010348915,
+        0.00017920876
+      ]
+    }
+  ],
+  "picked_up": [
+    {
+      "id": "token",
+      "by": "walker",
+      "at_step": 66
+    }
+  ],
+  "held": [
+    {
+      "id": "token",
+      "by": "walker",
+      "at_step": 66
+    }
+  ],
+  "dropped": [
+    {
+      "id": "token",
+      "by": "walker",
+      "at_step": 99
+    }
+  ],
+  "camera": {
+    "position": [
+      -0.28474277,
+      0.9837191,
+      1.6009095
+    ],
+    "look_at": [
+      0.7152572,
+      0.33371913,
+      0.00090948486
+    ]
+  },
+  "stopped": {
+    "kind": "entered",
+    "body": "exit",
+    "at_step": 99
+  }
+}
