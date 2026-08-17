@@ -2,7 +2,7 @@ use rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::scene::{MeshCollider, Scene, Shape};
+use crate::scene::{Joint, MeshCollider, Scene, Shape};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhysicsDump {
@@ -11,6 +11,17 @@ pub struct PhysicsDump {
     pub gravity: [f32; 3],
     pub bodies: Vec<PhysicsBodyState>,
     pub contacts: Vec<PhysicsContact>,
+    #[serde(default)]
+    pub joints: Vec<PhysicsJoint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhysicsJoint {
+    pub kind: String,
+    pub body_a: String,
+    pub body_b: String,
+    pub anchor: [f32; 3],
+    pub axis: [f32; 3],
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +64,7 @@ struct PhysicsWorld {
     collider_to_id: HashMap<ColliderHandle, String>,
     body_colliders: HashMap<String, String>,
     body_ids: Vec<String>,
+    authored_joints: Vec<PhysicsJoint>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
     physics_pipeline: PhysicsPipeline,
@@ -74,6 +86,7 @@ impl PhysicsWorld {
             collider_to_id: HashMap::new(),
             body_colliders: HashMap::new(),
             body_ids: Vec::new(),
+            authored_joints: Vec::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
                 let mut p = IntegrationParameters::default();
@@ -158,6 +171,56 @@ impl PhysicsWorld {
             self.collider_to_id.insert(ch, body.id.clone());
             self.body_colliders.insert(body.id.clone(), kind);
             self.body_ids.push(body.id.clone());
+        }
+        self.populate_joints(scene)?;
+        Ok(())
+    }
+
+    fn populate_joints(&mut self, scene: &Scene) -> Result<(), String> {
+        for joint in &scene.joints {
+            match joint {
+                Joint::Hinge {
+                    body_a,
+                    body_b,
+                    anchor,
+                    axis,
+                } => {
+                    let ha = *self.body_handles.get(body_a).ok_or_else(|| {
+                        format!("hinge body_a '{body_a}' not found")
+                    })?;
+                    let hb = *self.body_handles.get(body_b).ok_or_else(|| {
+                        format!("hinge body_b '{body_b}' not found")
+                    })?;
+                    let rb_a = &self.rigid_body_set[ha];
+                    let rb_b = &self.rigid_body_set[hb];
+                    let world_anchor = point![anchor[0], anchor[1], anchor[2]];
+                    let local_a = rb_a.position().inverse() * world_anchor;
+                    let local_b = rb_b.position().inverse() * world_anchor;
+                    let world_axis = vector![axis[0], axis[1], axis[2]];
+                    let local_axis_a = rb_a.rotation().inverse() * world_axis;
+                    let unit = UnitVector::try_new(local_axis_a, 1e-6).ok_or_else(|| {
+                        format!("hinge axis too small: {axis:?}")
+                    })?;
+                    let hinge = RevoluteJointBuilder::new(unit)
+                        .local_anchor1(local_a)
+                        .local_anchor2(local_b)
+                        .contacts_enabled(false)
+                        .motor_velocity(0.0, 8.0)
+                        .build();
+                    self.impulse_joint_set.insert(ha, hb, hinge, true);
+                    if let Some(rb) = self.rigid_body_set.get_mut(hb) {
+                        rb.set_angular_damping(3.0);
+                        rb.set_linear_damping(1.0);
+                    }
+                    self.authored_joints.push(PhysicsJoint {
+                        kind: "hinge".into(),
+                        body_a: body_a.clone(),
+                        body_b: body_b.clone(),
+                        anchor: *anchor,
+                        axis: *axis,
+                    });
+                }
+            }
         }
         Ok(())
     }
@@ -266,6 +329,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         gravity: [0.0, -9.81, 0.0],
         bodies: world.snapshot_bodies(),
         contacts: world.snapshot_contacts(),
+        joints: world.authored_joints.clone(),
     })
 }
 

@@ -9,8 +9,26 @@ pub struct Scene {
     pub camera: Camera,
     pub lights: Vec<Light>,
     pub bodies: Vec<Body>,
+    /// Authorable joints. `anchor` is world-space; converted to local on each body
+    /// at spawn. `axis` is a world-space direction (horizontal so gravity hangs).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub joints: Vec<Joint>,
     #[serde(skip, default)]
     pub mesh_search_dirs: Vec<PathBuf>,
+}
+
+/// Scene-authored constraint. Internally tagged with `type`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum Joint {
+    /// Revolute / hinge. `anchor` is world-space; `axis` is world-space.
+    #[serde(rename = "hinge")]
+    Hinge {
+        body_a: String,
+        body_b: String,
+        anchor: [f32; 3],
+        axis: [f32; 3],
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1564,5 +1582,127 @@ pub fn increment27_scene() -> Scene {
     if let Some(pane) = scene.bodies.iter_mut().find(|b| b.id == "pane") {
         pane.material.dispersion = disp;
     }
+    scene
+}
+
+pub const INCREMENT28_SCENE_JSON: &str = r#"{
+  "camera": { "position": [3.6, 2.35, 5.2], "look_at": [0.1, 0.38, 0.0], "fov_y_deg": 40 },
+  "lights": [
+    { "type": "directional", "direction": [-0.45, -1.0, -0.35], "color": [1.0, 0.97, 0.92], "intensity": 3.0 },
+    { "type": "area", "position": [0.15, 1.45, 0.40], "size": [1.2, 0.8], "color": [1.0, 0.75, 0.45], "intensity": 40.0, "normal": [0.0, -1.0, 0.0] }
+  ],
+  "bodies": [
+    {
+      "id": "ground",
+      "shape": { "type": "mesh", "path": "meshes/bowl.obj", "collider": "trimesh" },
+      "position": [0, 0, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "material": { "albedo": [0.48, 0.44, 0.38], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "rock",
+      "shape": { "type": "mesh", "path": "meshes/rock.obj", "collider": "convex_hull" },
+      "position": [0.40, 0.002, 0.08],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 12.0,
+      "material": { "albedo": [0.48, 0.52, 0.62], "roughness": 0.28, "metallic": 0.2, "albedo_map": "textures/rock.png" }
+    },
+    {
+      "id": "ball",
+      "shape": { "type": "sphere", "radius": 0.32 },
+      "position": [-1.10, 0.36, 0.10],
+      "mass": 1.0,
+      "material": { "albedo": [0.92, 0.78, 0.45], "roughness": 0.15, "metallic": 0.9, "clearcoat": 1.0, "clearcoat_roughness": 0.08, "anisotropy": 0.95, "anisotropy_rotation": 0.6, "iridescence": 1.0, "iridescence_ior": 1.3, "iridescence_thickness": 380 }
+    },
+    {
+      "id": "pillar",
+      "shape": { "type": "mesh", "path": "meshes/pillar.gltf", "collider": "convex_hull" },
+      "position": [1.10, 0.002, 0.70],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 16.0,
+      "material": { "albedo": [0.40, 0.40, 0.42], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "pane",
+      "shape": { "type": "mesh", "path": "meshes/pane.gltf", "collider": "trimesh" },
+      "position": [0.50, 0.08, 2.20],
+      "rotation_wxyz": [0.9914449, 0.0, -0.1305262, 0.0],
+      "mass": 0,
+      "material": { "albedo": [0.75, 0.90, 1.00], "roughness": 0.08, "metallic": 0.0, "dispersion": 0.18 }
+    },
+    {
+      "id": "crate",
+      "shape": { "type": "mesh", "path": "meshes/crate.obj", "collider": "convex_hull" },
+      "position": [-0.35, 0.002, 0.85],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 2.5,
+      "material": { "albedo": [0.62, 0.40, 0.22], "roughness": 0.78, "metallic": 0.0 }
+    },
+    {
+      "id": "bench",
+      "shape": { "type": "mesh", "path": "meshes/bench.obj", "collider": "trimesh" },
+      "position": [1.35, 0.002, -0.15],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 5.0,
+      "material": { "albedo": [0.32, 0.36, 0.40], "roughness": 0.72, "metallic": 0.0, "sheen": 1.0, "sheen_roughness": 0.4, "sheen_color": [0.75, 0.12, 0.28] }
+    },
+    {
+      "id": "lantern",
+      "shape": { "type": "sphere", "radius": 0.12 },
+      "position": [1.10, 1.22, 1.42],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.4,
+      "material": { "albedo": [0.78, 0.48, 0.16], "roughness": 0.28, "metallic": 0.85 }
+    }
+  ],
+  "joints": [
+    { "type": "hinge", "body_a": "pillar", "body_b": "lantern", "anchor": [1.10, 1.08, 1.10], "axis": [1.0, 0.0, 0.0] }
+  ]
+}"#;
+
+pub fn increment28_scene_json() -> &'static str {
+    INCREMENT28_SCENE_JSON
+}
+
+/// Increment-27 courtyard plus one hanging lantern on the existing pillar.
+/// Clones increment27_scene() so the courtyard cannot drift, then authors
+/// the lantern body and a world-space Rapier hinge.
+pub fn increment28_scene() -> Scene {
+    let mut scene = increment27_scene();
+    scene.bodies.push(Body {
+        id: "lantern".into(),
+        shape: Shape::Sphere { radius: 0.12 },
+        position: [1.10, 1.22, 1.42],
+        rotation_wxyz: [1.0, 0.0, 0.0, 0.0],
+        mass: 0.4,
+        linear_velocity: [0.0, 0.0, 0.0],
+        material: Material {
+            albedo: [0.78, 0.48, 0.16],
+            roughness: 0.28,
+            metallic: 0.85,
+            albedo_map: None,
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.0,
+            sheen: 0.0,
+            sheen_roughness: 0.5,
+            sheen_color: [1.0, 1.0, 1.0],
+            anisotropy: 0.0,
+            anisotropy_rotation: 0.0,
+            iridescence: 0.0,
+            iridescence_ior: 1.3,
+            iridescence_thickness: 400.0,
+            dispersion: 0.0,
+        },
+    });
+    scene.joints.push(Joint::Hinge {
+        body_a: "pillar".into(),
+        body_b: "lantern".into(),
+        // World-space attachment just above / +Z of the pillar top.
+        // Converted to local anchors on each body at spawn.
+        anchor: [1.10, 1.08, 1.10],
+        // World X: horizontal so gravity swings the lantern down (Y-up).
+        axis: [1.0, 0.0, 0.0],
+    });
     scene
 }
