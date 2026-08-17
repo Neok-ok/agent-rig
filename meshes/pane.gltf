@@ -6,7 +6,8 @@
   "extensionsUsed": [
     "KHR_materials_transmission",
     "KHR_materials_ior",
-    "KHR_materials_volume"
+    "KHR_materials_volume",
+    "KHR_materials_dispersion"
   ],
   "scene": 0,
   "scenes": [
@@ -65,6 +66,9 @@
           "thicknessFactor": 1.0,
           "attenuationDistance": 0.45,
           "attenuationColor": [0.20, 0.85, 0.28]
+        },
+        "KHR_materials_dispersion": {
+          "dispersion": 0.18
         }
       }
     }

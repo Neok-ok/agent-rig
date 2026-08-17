@@ -1,4 +1,4 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–26).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–27).
 
 mod mesh;
 mod physics;
@@ -14,7 +14,7 @@ pub use mesh::{
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
     increment3_scene_json, increment4_scene, increment4_scene_json, increment5_scene,
-    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, increment16_scene, increment16_scene_json, increment17_scene, increment17_scene_json, increment18_scene, increment18_scene_json, increment19_scene, increment19_scene_json, increment20_scene, increment20_scene_json, increment21_scene, increment21_scene_json, increment22_scene, increment22_scene_json, increment23_scene, increment23_scene_json, increment24_scene, increment24_scene_json, increment25_scene, increment25_scene_json, increment26_scene, increment26_scene_json, parse_scene, Body, Camera,
+    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, increment16_scene, increment16_scene_json, increment17_scene, increment17_scene_json, increment18_scene, increment18_scene_json, increment19_scene, increment19_scene_json, increment20_scene, increment20_scene_json, increment21_scene, increment21_scene_json, increment22_scene, increment22_scene_json, increment23_scene, increment23_scene_json, increment24_scene, increment24_scene_json, increment25_scene, increment25_scene_json, increment26_scene, increment26_scene_json, increment27_scene, increment27_scene_json, parse_scene, Body, Camera,
     Light, Material, MeshCollider, Scene, Shape,
 };
 
@@ -51,6 +51,7 @@ pub const INCREMENT23_STEPS: u32 = 100;
 pub const INCREMENT24_STEPS: u32 = 100;
 pub const INCREMENT25_STEPS: u32 = 100;
 pub const INCREMENT26_STEPS: u32 = 100;
+pub const INCREMENT27_STEPS: u32 = 100;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -238,6 +239,11 @@ pub fn run_increment25(out_dir: &Path, steps: u32, dt: f32, width: u32, height: 
 /// Increment 26: increment-25 courtyard; gold ball has authored thin-film iridescence.
 pub fn run_increment26(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
     write_step_render(out_dir, &increment26_scene(), steps, dt, width, height)
+}
+
+/// Increment 27: increment-26 courtyard; pane has authored KHR_materials_dispersion.
+pub fn run_increment27(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
+    write_step_render(out_dir, &increment27_scene(), steps, dt, width, height)
 }
 
 #[derive(Debug, Clone)]

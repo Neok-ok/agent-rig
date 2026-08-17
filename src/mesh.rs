@@ -56,6 +56,8 @@ pub struct GltfPbrMaterial {
     pub attenuation_distance: f32,
     /// KHR_materials_volume.thicknessFactor. Default 0.
     pub thickness: f32,
+    /// KHR_materials_dispersion.dispersion (20/Abbe). Default 0 (no chromatic split).
+    pub dispersion: f32,
 }
 
 impl GltfPbrMaterial {
@@ -95,6 +97,11 @@ impl GltfPbrMaterial {
     /// Authored volume absorption (finite distance, not a hidden constant).
     pub fn has_volume_attenuation(&self) -> bool {
         self.attenuation_distance.is_finite() && self.attenuation_distance > 1e-8
+    }
+
+    /// Authored chromatic dispersion (KHR_materials_dispersion).
+    pub fn has_dispersion(&self) -> bool {
+        self.dispersion > 1e-6
     }
 
     pub fn alpha_factor(&self) -> f32 {
@@ -888,6 +895,7 @@ fn parse_primitive_material(
     let mut attenuation_color = [1.0f32, 1.0, 1.0];
     let mut attenuation_distance = f32::INFINITY;
     let mut thickness = 0.0f32;
+    let mut dispersion = 0.0f32;
     let alpha_mode = match mat
         .get("alphaMode")
         .and_then(|v| v.as_str())
@@ -1004,6 +1012,11 @@ fn parse_primitive_material(
                 thickness = n as f32;
             }
         }
+        if let Some(disp) = ext.get("KHR_materials_dispersion") {
+            if let Some(n) = disp.get("dispersion").and_then(|v| v.as_f64()) {
+                dispersion = (n as f32).max(0.0);
+            }
+        }
     }
     Ok(Some(GltfPbrMaterial {
         base_color_factor,
@@ -1029,6 +1042,7 @@ fn parse_primitive_material(
         attenuation_color,
         attenuation_distance,
         thickness,
+        dispersion,
     }))
 }
 

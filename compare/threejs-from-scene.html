@@ -288,6 +288,7 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
   let attenuationColor = [1, 1, 1];
   let attenuationDistance = Infinity;
   let thickness = 0;
+  let dispersion = 0;
   if (mat.extensions && mat.extensions.KHR_materials_transmission) {
     const tf = mat.extensions.KHR_materials_transmission.transmissionFactor;
     if (tf !== undefined) transmission = tf;
@@ -300,6 +301,10 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
     if (vol.attenuationColor) attenuationColor = vol.attenuationColor;
     if (vol.attenuationDistance !== undefined) attenuationDistance = vol.attenuationDistance;
     if (vol.thicknessFactor !== undefined) thickness = vol.thicknessFactor;
+  }
+  if (mat.extensions && mat.extensions.KHR_materials_dispersion) {
+    const d = mat.extensions.KHR_materials_dispersion.dispersion;
+    if (d !== undefined) dispersion = d;
   }
   return {
     baseColorFactor: factor,
@@ -318,6 +323,7 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
     attenuationColor,
     attenuationDistance,
     thickness,
+    dispersion,
     alphaMode: mat.alphaMode || 'OPAQUE',
     opacity: factor.length > 3 ? factor[3] : 1,
     doubleSided: !!mat.doubleSided,
@@ -442,7 +448,8 @@ for (const body of spec.bodies) {
   const iridescenceIOR = (body.material && body.material.iridescence_ior);
   const iridescenceThickness = (body.material && body.material.iridescence_thickness);
   const hasVolume = !!(gltfPbr && gltfPbr.attenuationDistance !== undefined && Number.isFinite(gltfPbr.attenuationDistance));
-  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0) || clearcoat > 0 || sheen > 0 || hasVolume || anisotropy > 0 || iridescence > 0;
+  const dispersion = (gltfPbr && gltfPbr.dispersion) || (body.material && body.material.dispersion) || 0;
+  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0) || clearcoat > 0 || sheen > 0 || hasVolume || anisotropy > 0 || iridescence > 0 || dispersion > 0;
   const MatClass = usePhysical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
   const mat = new MatClass({
     color: new THREE.Color(albedo[0], albedo[1], albedo[2]),
@@ -471,6 +478,9 @@ for (const body of spec.bodies) {
     if (iridescenceThickness !== undefined && iridescenceThickness !== null) {
       mat.iridescenceThicknessRange = [iridescenceThickness, iridescenceThickness];
     }
+  }
+  if (dispersion > 0) {
+    mat.dispersion = dispersion;
   }
   if (usePhysical && gltfPbr && gltfPbr.transmission > 0) {
     mat.transmission = gltfPbr.transmission;

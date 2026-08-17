@@ -169,6 +169,7 @@ struct Prim {
     iridescence: f32,
     iridescence_ior: f32,
     iridescence_thickness: f32,
+    dispersion: f32,
 }
 
 struct AlbedoMap {
@@ -499,6 +500,7 @@ struct Hit {
     iridescence: f32,
     iridescence_ior: f32,
     iridescence_thickness: f32,
+    dispersion: f32,
 }
 
 /// Order-2 SH of the procedural HDR environment (y-up).
@@ -537,6 +539,7 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         let iridescence = b.material.iridescence.clamp(0.0, 1.0);
         let iridescence_ior = b.material.iridescence_ior;
         let iridescence_thickness = b.material.iridescence_thickness;
+        let mut dispersion = b.material.dispersion.max(0.0);
         let mut albedo_map = b.material.albedo_map.as_ref().map(|p| {
             let resolved = scene
                 .resolve_texture(p)
@@ -565,6 +568,12 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
                     attenuation_color = V3::from_arr(gm.attenuation_color);
                     attenuation_distance = gm.attenuation_distance;
                     thickness = gm.thickness.max(0.0);
+                    if gm.dispersion > 0.0 {
+                        dispersion = gm.dispersion.max(0.0);
+                    }
+                    if b.material.dispersion > 0.0 {
+                        dispersion = b.material.dispersion.max(0.0);
+                    }
                     if let Some(bytes) = &gm.base_color_texture_bytes {
                         let mut map = AlbedoMap::load_rgba_from_bytes(bytes)
                             .unwrap_or_else(|e| panic!("gltf baseColorTexture: {e}"));
@@ -711,6 +720,7 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             iridescence,
             iridescence_ior,
             iridescence_thickness,
+            dispersion,
         });
     }
 
@@ -865,7 +875,54 @@ pub fn render_scene_to_png(scene: &Scene, width: u32, height: u32, path: &Path) 
 }
 
 fn trace(orig: V3, dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -> V3 {
-    trace_rec(orig, dir, prims, lights, env, 0.0, MAX_BLEND_DEPTH)
+    trace_rec(orig, dir, prims, lights, env, 0.0, MAX_BLEND_DEPTH, None)
+}
+
+/// Cauchy IOR for a wavelength in micrometres.
+/// n(λ) = ior + dispersion * (1/λ² - 1/0.55²). Green (0.55 µm) stays at `ior`.
+fn cauchy_ior(ior: f32, dispersion: f32, lambda_um: f32) -> f32 {
+    let n = ior + dispersion * (1.0 / (lambda_um * lambda_um) - 1.0 / (0.55 * 0.55));
+    n.max(1.0)
+}
+
+fn transmit_continue(
+    h: &Hit,
+    dir: V3,
+    src: V3,
+    ior: f32,
+    prims: &[Prim],
+    lights: &[Light],
+    env: &EnvSh,
+    depth: u32,
+    ior_override: Option<f32>,
+) -> V3 {
+    let refr = snell_refract(dir, h.n, ior);
+    // Leave the hit face along the refracted direction so we
+    // traverse the slab (enter+exit) instead of re-hitting it.
+    let nudged = h.p.add(refr.mul(EPS * 4.0));
+    let behind = trace_rec(nudged, refr, prims, lights, env, 0.0, depth - 1, ior_override);
+    // transmission=1 → the continuation *is* the image. Alpha
+    // tints (glass color) instead of covering the kink twice.
+    let cover = h.alpha * (1.0 - h.transmission);
+    let volume = h.attenuation_distance.is_finite() && h.attenuation_distance > 1e-8;
+    // Entering: incident points against the outward normal.
+    let entering = dir.dot(h.n) <= 0.0;
+    let tint = if volume {
+        // Volume absorption replaces the surface albedo tint.
+        // Apply Beer-Lambert once on the enter → exit segment (per-ray).
+        if entering {
+            beer_lambert_through(h, nudged, refr, prims)
+        } else {
+            V3::new(1.0, 1.0, 1.0)
+        }
+    } else {
+        V3::new(
+            1.0 - h.alpha * (1.0 - h.albedo.x),
+            1.0 - h.alpha * (1.0 - h.albedo.y),
+            1.0 - h.alpha * (1.0 - h.albedo.z),
+        )
+    };
+    src.mul(cover).add(behind.hadamard(tint).mul(1.0 - cover))
 }
 
 fn trace_rec(
@@ -876,6 +933,7 @@ fn trace_rec(
     env: &EnvSh,
     tmin: f32,
     depth: u32,
+    ior_override: Option<f32>,
 ) -> V3 {
     match closest_hit(orig, dir, prims, tmin, f32::MAX) {
         None => env_radiance(dir),
@@ -884,7 +942,7 @@ fn trace_rec(
                 return if depth == 0 {
                     env_radiance(dir)
                 } else {
-                    trace_rec(orig, dir, prims, lights, env, h.t + EPS, depth)
+                    trace_rec(orig, dir, prims, lights, env, h.t + EPS, depth, ior_override)
                 };
             }
             let src = shade(&h, dir, prims, lights, env);
@@ -893,37 +951,28 @@ fn trace_rec(
             if (transmitting || blend) && depth > 0 {
                 // Increment 17: continue and composite. Increment 20: Snell-refract
                 // using the authored IOR (eta = 1/ior entering, ior leaving).
+                // Increment 27: when dispersion > 0, split R/G/B with Cauchy IOR.
                 if transmitting {
-                    let refr = snell_refract(dir, h.n, h.ior);
-                    // Leave the hit face along the refracted direction so we
-                    // traverse the slab (enter+exit) instead of re-hitting it.
-                    let nudged = h.p.add(refr.mul(EPS * 4.0));
-                    let behind = trace_rec(nudged, refr, prims, lights, env, 0.0, depth - 1);
-                    // transmission=1 → the continuation *is* the image. Alpha
-                    // tints (glass color) instead of covering the kink twice.
-                    let cover = h.alpha * (1.0 - h.transmission);
-                    let volume = h.attenuation_distance.is_finite()
-                        && h.attenuation_distance > 1e-8;
-                    // Entering: incident points against the outward normal.
-                    let entering = dir.dot(h.n) <= 0.0;
-                    let tint = if volume {
-                        // Volume absorption replaces the surface albedo tint.
-                        // Apply Beer-Lambert once on the enter → exit segment.
-                        if entering {
-                            beer_lambert_through(&h, nudged, refr, prims)
-                        } else {
-                            V3::new(1.0, 1.0, 1.0)
-                        }
-                    } else {
-                        V3::new(
-                            1.0 - h.alpha * (1.0 - h.albedo.x),
-                            1.0 - h.alpha * (1.0 - h.albedo.y),
-                            1.0 - h.alpha * (1.0 - h.albedo.z),
-                        )
-                    };
-                    return src.mul(cover).add(behind.hadamard(tint).mul(1.0 - cover));
+                    let disp = h.dispersion;
+                    if disp > 1e-6 && ior_override.is_none() {
+                        let r = transmit_continue(
+                            &h, dir, src, cauchy_ior(h.ior, disp, 0.65),
+                            prims, lights, env, depth, Some(cauchy_ior(h.ior, disp, 0.65)),
+                        );
+                        let g = transmit_continue(
+                            &h, dir, src, cauchy_ior(h.ior, disp, 0.55),
+                            prims, lights, env, depth, Some(cauchy_ior(h.ior, disp, 0.55)),
+                        );
+                        let b = transmit_continue(
+                            &h, dir, src, cauchy_ior(h.ior, disp, 0.45),
+                            prims, lights, env, depth, Some(cauchy_ior(h.ior, disp, 0.45)),
+                        );
+                        return V3::new(r.x, g.y, b.z);
+                    }
+                    let ior = ior_override.unwrap_or(h.ior);
+                    return transmit_continue(&h, dir, src, ior, prims, lights, env, depth, ior_override);
                 }
-                let behind = trace_rec(orig, dir, prims, lights, env, h.t + EPS, depth - 1);
+                let behind = trace_rec(orig, dir, prims, lights, env, h.t + EPS, depth - 1, ior_override);
                 return src.mul(h.alpha).add(behind.mul(1.0 - h.alpha));
             }
             src
@@ -1217,6 +1266,7 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         iridescence: prim.iridescence,
         iridescence_ior: prim.iridescence_ior,
         iridescence_thickness: prim.iridescence_thickness,
+        dispersion: prim.dispersion,
     }
 }
 
