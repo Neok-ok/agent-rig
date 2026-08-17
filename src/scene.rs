@@ -45,6 +45,11 @@ pub struct Scene {
     /// Joints attached to the body are dropped. Omitted when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub despawns: Vec<DespawnEvent>,
+    /// Pickup-on-overlap. After each step, if `body` is live and overlaps
+    /// `trigger` via `by`, despawn `body` and record dump.picked_up.
+    /// Omitted when empty so increment 18–50 JSON stay compact.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pickups: Vec<Pickup>,
     #[serde(skip, default)]
     pub mesh_search_dirs: Vec<PathBuf>,
 }
@@ -306,6 +311,14 @@ pub struct SpawnEvent {
 pub struct DespawnEvent {
     pub at_step: u32,
     pub body: String,
+}
+
+/// Despawn `body` when `by` overlaps `trigger`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Pickup {
+    pub body: String,
+    pub trigger: String,
+    pub by: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5084,6 +5097,48 @@ pub fn increment50_scene() -> Scene {
     scene.despawns.push(DespawnEvent {
         at_step: 80,
         body: "bar".into(),
+    });
+    scene
+}
+
+pub fn increment51_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        let mut v: serde_json::Value = serde_json::from_str(increment50_scene_json())
+            .expect("increment50 scene JSON is valid");
+        let triggers = v["triggers"].as_array_mut().expect("increment50 triggers");
+        triggers.push(serde_json::json!({
+            "id": "token_zone",
+            "shape": { "type": "box", "size": [0.40, 0.40, 0.40] },
+            "position": [0.70, 0.12, 1.45]
+        }));
+        v["pickups"] = serde_json::json!([{
+            "body": "token",
+            "trigger": "token_zone",
+            "by": "walker"
+        }]);
+        serde_json::to_string_pretty(&v).expect("serialize increment51 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-50 courtyard plus pickup-on-overlap. Clones increment50_scene()
+/// so camera / walker / token spawn / bar despawn / courtyard cannot drift.
+/// Adds ONLY trigger `token_zone` and `pickups`. increment50_scene() stays
+/// pickup-free (token still there, no token_zone).
+pub fn increment51_scene() -> Scene {
+    let mut scene = increment50_scene();
+    scene.triggers.push(Trigger {
+        id: "token_zone".into(),
+        shape: Shape::Box {
+            size: [0.40, 0.40, 0.40],
+        },
+        position: [0.70, 0.12, 1.45],
+    });
+    scene.pickups.push(Pickup {
+        body: "token".into(),
+        trigger: "token_zone".into(),
+        by: "walker".into(),
     });
     scene
 }

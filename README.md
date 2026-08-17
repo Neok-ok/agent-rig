@@ -1,4 +1,4 @@
-# agent-rig (increments 1–50)
+# agent-rig (increments 1–51)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1621,6 +1621,30 @@ cd /workspace/agent-rig && ./scripts/increment50-threejs.sh
 
 Writes `artifacts/increment50/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, lantern emissive, no env map, no tonemap, 800x450). Three.js uses dump poses: gold token present, yellow bar gone, walked walker, half-open gate, settled cork, fallen bob, ridden rider, slid platform. Camera is the increment-46 close-up.
 
+
+## Increment 51
+
+Same courtyard as increment 50 (gold token spawn@30, yellow bar despawn@80, coral walker, gate-cluster camera). Increment 51 clones `increment50_scene()` and adds ONLY trigger `token_zone` (box `[0.40, 0.40, 0.40]` at `[0.70, 0.12, 1.45]`, sensor) and `pickups: [{ body: token, trigger: token_zone, by: walker }]`. After the token spawns, the walker overlapping `token_zone` despawns the token as a pickup. After 120 steps the dump has no token, `picked_up` includes `{ id: token, by: walker, at_step in 30–80 }`, `spawned` still has token@30, and `despawned` still has bar@80 only. `increment50_scene()` stays pickup-free (token still there, no `token_zone`); increment 18–50 scene JSON is unchanged (no `pickups` key); increment-50 dump omits `picked_up` when empty. Camera, walker, spawn/despawn, courtyard leftovers unchanged. No follow-cam, no play-until, no second scene. Three.js uses dump poses (token gone).
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment51.sh
+```
+
+Writes:
+
+- `artifacts/increment51/scene.json` — increment-50 courtyard plus token_zone + pickups
+- `artifacts/increment51/physics.json` — post-step dump plus `picked_up` (token by walker); token gone, bar gone
+- `artifacts/increment51/frame.png` — our renderer, 800x450, gold token gone vs increment 50
+- `artifacts/increment51/threejs-frame.png` — stock Three.js, same pose; no token
+
+### CLI
+
+```bash
+cargo run --release -- increment51 --out artifacts/increment51
+```
+
 ## Scene format
 
 JSON object with `camera`, `lights`, `bodies`, optional `joints`, optional `triggers`, optional `raycasts`, optional `shapecasts`, optional `impulses`, optional `record_contact_events`, optional `spawns`, and optional `despawns`.
@@ -1749,3 +1773,5 @@ Increment 48: increment48_scene clones increment47 and adds ONLY `walker` + `con
 Increment 49: increment49_scene clones increment48 and adds ONLY `bar` + `collision_groups` on walker (membership 2 / filter 1) and bar (membership 4 / filter 0xFFFF); increment48_scene stays bar-free and group-free; increment 18-48 scene JSON unchanged (no `"collision_groups"`); after 120 steps walker.x ≤ authored_x − 0.4 (walks through the bar), walker.y in ~[0.14, 0.28], grounded true, bar unmoved, dump walker/bar include `collision_groups`, contact_events has no walker–bar started pair; increment48 dump bodies have no `collision_groups` key; courtyard stays (walker controller, contact_events, gate ~0.55, cork spring, bob y < 0.22, broken_joints, rider, platform kinematic, lid+fixed, impulses, drawer_probe, drawer_sweep); `increment49` writes scene + physics dump + our PNG.
 
 Increment 50: increment50_scene clones increment49 and adds ONLY `spawns` (gold token at step 30) + `despawns` (bar at step 80); increment49_scene stays timed-event-free (bar present, no token); increment 18-49 scene JSON unchanged (no `"spawns"` / `"despawns"`); after 120 steps dump.bodies has token near [0.70, 0.12, 1.45] and no bar, dump.spawned includes token@30, dump.despawned includes bar@80; increment49 dump has no spawned/despawned keys; walker still Δx ≥ 0.4, y on floor, grounded; courtyard stays; `increment50` writes scene + physics dump + our PNG.
+
+Increment 51: increment51_scene clones increment50 and adds ONLY `token_zone` + `pickups` (token / token_zone / walker); increment50_scene stays pickup-free (token present, no token_zone); increment 18-50 scene JSON unchanged (no `"pickups"`); after 120 steps dump.bodies has no token, dump.picked_up includes token by walker at_step 30-80, dump.spawned still token@30, dump.despawned still bar@80 only; increment50 dump has token and no picked_up key; walker still Δx ≥ 0.4, y on floor, grounded; courtyard stays; `increment51` writes scene + physics dump + our PNG.

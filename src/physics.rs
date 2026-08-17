@@ -50,6 +50,17 @@ pub struct PhysicsDump {
     /// increment-49 dumps stay without a `despawned` key.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub despawned: Vec<DespawnRecord>,
+    /// Bodies collected by authored pickups. Omitted when empty so
+    /// increment-50 dumps stay without a `picked_up` key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub picked_up: Vec<PickupRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PickupRecord {
+    pub id: String,
+    pub by: String,
+    pub at_step: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,6 +204,7 @@ struct PhysicsWorld {
     controller_states: Vec<ControllerState>,
     spawned: Vec<SpawnRecord>,
     despawned: Vec<DespawnRecord>,
+    picked_up: Vec<PickupRecord>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
     physics_pipeline: PhysicsPipeline,
@@ -228,6 +240,7 @@ impl PhysicsWorld {
             controller_states: Vec::new(),
             spawned: Vec::new(),
             despawned: Vec::new(),
+            picked_up: Vec::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
                 let mut p = IntegrationParameters::default();
@@ -436,6 +449,7 @@ impl PhysicsWorld {
                     size[2] * 0.5,
                 )
                 .sensor(true)
+                .active_collision_types(ActiveCollisionTypes::all())
                 .build(),
                 _ => {
                     return Err(format!(
@@ -449,6 +463,63 @@ impl PhysicsWorld {
             self.trigger_collider_to_id.insert(ch, id.clone());
         }
         Ok(())
+    }
+
+    fn apply_pickups(&mut self, scene: &Scene, step: u32) -> Result<(), String> {
+        if scene.pickups.is_empty() {
+            return Ok(());
+        }
+        let overlaps = self.snapshot_overlaps();
+        let mut to_pick: Vec<(String, String)> = Vec::new();
+        for p in &scene.pickups {
+            if !self.body_handles.contains_key(&p.body) {
+                continue;
+            }
+            let pair_hit = overlaps
+                .iter()
+                .any(|o| o.trigger == p.trigger && o.body == p.by);
+            let volume_hit = self.body_overlaps_trigger(&p.by, &p.trigger);
+            if pair_hit || volume_hit {
+                to_pick.push((p.body.clone(), p.by.clone()));
+            }
+        }
+        for (id, by) in to_pick {
+            if self.body_handles.contains_key(&id) {
+                self.despawn_body(&id)?;
+                self.picked_up.push(PickupRecord {
+                    id,
+                    by,
+                    at_step: step,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn body_overlaps_trigger(&self, body_id: &str, trigger_id: &str) -> bool {
+        let Some(&bh) = self.body_handles.get(body_id) else {
+            return false;
+        };
+        let cols = self.rigid_body_set[bh].colliders();
+        if cols.is_empty() {
+            return false;
+        }
+        let body_col = &self.collider_set[cols[0]];
+        let Some((&th, _)) = self
+            .trigger_collider_to_id
+            .iter()
+            .find(|(_, id)| id.as_str() == trigger_id)
+        else {
+            return false;
+        };
+        let trig_col = &self.collider_set[th];
+        rapier3d::parry::query::intersection_test(
+            body_col.position(),
+            body_col.shape(),
+            trig_col.position(),
+            trig_col.shape(),
+        )
+        .unwrap_or(false)
     }
 
     fn populate_joints(&mut self, scene: &Scene) -> Result<(), String> {
@@ -876,6 +947,7 @@ impl PhysicsWorld {
                 desired_translation,
                 QueryFilter::default()
                     .exclude_rigid_body(handle)
+                    .exclude_sensors()
                     .groups(groups),
                 |_| {},
             );
@@ -1232,6 +1304,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
     for i in 0..steps {
         world.apply_scheduled(scene, i)?;
         world.step();
+        world.apply_pickups(scene, i)?;
     }
     world.refresh_hinge_angles();
     Ok(PhysicsDump {
@@ -1256,6 +1329,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         controllers: world.controller_states.clone(),
         spawned: world.spawned.clone(),
         despawned: world.despawned.clone(),
+        picked_up: world.picked_up.clone(),
     })
 }
 
@@ -1281,6 +1355,7 @@ pub fn simulate_trajectory(
         for _ in 0..frame_stride {
             world.apply_scheduled(scene, step)?;
             world.step();
+            world.apply_pickups(scene, step)?;
             step += 1;
         }
         frames.push(world.snapshot_frame(i * frame_stride));
