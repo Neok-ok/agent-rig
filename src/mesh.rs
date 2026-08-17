@@ -2,12 +2,24 @@
 
 use std::path::{Path, PathBuf};
 
+/// glTF material alphaMode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GltfAlphaMode {
+    Opaque,
+    Mask,
+    Blend,
+}
+
 /// pbrMetallicRoughness resolved from a glTF primitive material (if any).
 #[derive(Debug, Clone)]
 pub struct GltfPbrMaterial {
     pub base_color_factor: [f32; 4],
     pub metallic_factor: f32,
     pub roughness_factor: f32,
+    /// glTF alphaMode (OPAQUE / MASK / BLEND). Default OPAQUE.
+    pub alpha_mode: GltfAlphaMode,
+    /// glTF alphaCutoff (MASK only; default 0.5).
+    pub alpha_cutoff: f32,
     /// Sidecar image path (PNG/JPEG) next to the glTF, if the texture is a file URI.
     pub base_color_texture_path: Option<PathBuf>,
     /// Embedded image bytes (data URI or bufferView).
@@ -54,6 +66,30 @@ impl GltfPbrMaterial {
 
     pub fn has_emissive_texture(&self) -> bool {
         self.emissive_texture_path.is_some() || self.emissive_texture_bytes.is_some()
+    }
+
+    pub fn alpha_factor(&self) -> f32 {
+        self.base_color_factor[3]
+    }
+
+    /// Sample alpha = baseColorFactor[3] * texture A (glTF). No texture → factor only.
+    pub fn sample_alpha(&self, u: f32, v: f32) -> Result<f32, String> {
+        let factor_a = self.base_color_factor[3];
+        if !self.has_base_color_texture() {
+            return Ok(factor_a);
+        }
+        let img = if let Some(bytes) = &self.base_color_texture_bytes {
+            image::load_from_memory(bytes)
+                .map_err(|e| format!("load baseColor bytes: {e}"))?
+                .to_rgba8()
+        } else if let Some(path) = &self.base_color_texture_path {
+            image::open(path)
+                .map_err(|e| format!("load baseColor {path:?}: {e}"))?
+                .to_rgba8()
+        } else {
+            return Ok(factor_a);
+        };
+        Ok((sample_linear_a(&img, u, v) * factor_a).clamp(0.0, 1.0))
     }
 
     /// Sample emissive = factor * textureRGB (glTF). No texture → factor only (often [0,0,0]).
@@ -132,6 +168,34 @@ impl GltfPbrMaterial {
         let metallic = (b * self.metallic_factor).clamp(0.0, 1.0);
         Ok((metallic, roughness))
     }
+}
+
+fn sample_linear_a(img: &image::RgbaImage, u: f32, v: f32) -> f32 {
+    let w = img.width() as f32;
+    let h = img.height() as f32;
+    let u = u.rem_euclid(1.0);
+    let v = v.rem_euclid(1.0);
+    let x = u * w - 0.5;
+    let y = (1.0 - v) * h - 0.5;
+    let x0 = x.floor();
+    let y0 = y.floor();
+    let tx = x - x0;
+    let ty = y - y0;
+    let p00 = alpha_at(img, x0 as i32, y0 as i32);
+    let p10 = alpha_at(img, x0 as i32 + 1, y0 as i32);
+    let p01 = alpha_at(img, x0 as i32, y0 as i32 + 1);
+    let p11 = alpha_at(img, x0 as i32 + 1, y0 as i32 + 1);
+    let a = p00 * (1.0 - tx) + p10 * tx;
+    let b = p01 * (1.0 - tx) + p11 * tx;
+    a * (1.0 - ty) + b * ty
+}
+
+fn alpha_at(img: &image::RgbaImage, x: i32, y: i32) -> f32 {
+    let w = img.width() as i32;
+    let h = img.height() as i32;
+    let x = x.rem_euclid(w) as u32;
+    let y = y.rem_euclid(h) as u32;
+    img.get_pixel(x, y)[3] as f32 / 255.0
 }
 
 fn sample_linear_rgb(img: &image::RgbImage, u: f32, v: f32) -> (f32, f32, f32) {
@@ -765,6 +829,19 @@ fn parse_primitive_material(
     let mut emissive_factor = [0.0f32, 0.0, 0.0];
     let mut emissive_texture_path = None;
     let mut emissive_texture_bytes = None;
+    let alpha_mode = match mat
+        .get("alphaMode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("OPAQUE")
+    {
+        "MASK" => GltfAlphaMode::Mask,
+        "BLEND" => GltfAlphaMode::Blend,
+        _ => GltfAlphaMode::Opaque,
+    };
+    let alpha_cutoff = mat
+        .get("alphaCutoff")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.5) as f32;
     if let Some(pbr) = pbr {
         if let Some(arr) = pbr.get("baseColorFactor").and_then(|v| v.as_array()) {
             for (i, v) in arr.iter().take(4).enumerate() {
@@ -831,6 +908,8 @@ fn parse_primitive_material(
         base_color_factor,
         metallic_factor,
         roughness_factor,
+        alpha_mode,
+        alpha_cutoff,
         base_color_texture_path,
         base_color_texture_bytes,
         metallic_roughness_texture_path,

@@ -3,7 +3,9 @@
 use image::{Rgb, RgbImage};
 use std::path::Path;
 
-use crate::mesh::{apply_tbn, tbn_from_interpolated_tangent, tbn_from_positions_uvs};
+use crate::mesh::{
+    apply_tbn, tbn_from_interpolated_tangent, tbn_from_positions_uvs, GltfAlphaMode,
+};
 use crate::scene::{Light, Scene, Shape};
 
 pub const FRAME_WIDTH: u32 = 800;
@@ -14,6 +16,7 @@ const EPS: f32 = 1e-3;
 const PI: f32 = std::f32::consts::PI;
 const EXPOSURE: f32 = 0.74;
 const SH_SAMPLES: u32 = 96;
+const MAX_BLEND_DEPTH: u32 = 4;
 
 #[derive(Clone, Copy)]
 struct V3 {
@@ -146,12 +149,16 @@ struct Prim {
     normal_scale: f32,
     emissive_factor: V3,
     emissive_map: Option<AlbedoMap>,
+    alpha: f32,
+    alpha_mode: GltfAlphaMode,
+    alpha_cutoff: f32,
 }
 
 struct AlbedoMap {
     width: u32,
     height: u32,
     pixels: Vec<V3>,
+    alphas: Vec<f32>,
 }
 
 impl AlbedoMap {
@@ -180,10 +187,47 @@ impl AlbedoMap {
                 srgb_u8_to_linear(px[2]),
             ));
         }
+        let n = (width * height) as usize;
         Ok(Self {
             width,
             height,
             pixels,
+            alphas: vec![1.0; n],
+        })
+    }
+
+    fn load_rgba(path: &Path) -> Result<Self, String> {
+        let img = image::open(path)
+            .map_err(|e| format!("load albedo {path:?}: {e}"))?
+            .to_rgba8();
+        Self::from_rgba8(img)
+    }
+
+    fn load_rgba_from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let img = image::load_from_memory(bytes)
+            .map_err(|e| format!("load albedo bytes: {e}"))?
+            .to_rgba8();
+        Self::from_rgba8(img)
+    }
+
+    fn from_rgba8(img: image::RgbaImage) -> Result<Self, String> {
+        let width = img.width();
+        let height = img.height();
+        let mut pixels = Vec::with_capacity((width * height) as usize);
+        let mut alphas = Vec::with_capacity((width * height) as usize);
+        for px in img.pixels() {
+            pixels.push(V3::new(
+                srgb_u8_to_linear(px[0]),
+                srgb_u8_to_linear(px[1]),
+                srgb_u8_to_linear(px[2]),
+            ));
+            alphas.push(px[3] as f32 / 255.0);
+        }
+        Ok(Self {
+            width,
+            height,
+            pixels,
+            alphas,
         })
     }
 
@@ -217,6 +261,37 @@ impl AlbedoMap {
         let x = x.rem_euclid(w) as u32;
         let y = y.rem_euclid(h) as u32;
         self.pixels[(y * self.width + x) as usize]
+    }
+
+    fn sample_alpha(&self, u: f32, v: f32) -> f32 {
+        if self.alphas.is_empty() {
+            return 1.0;
+        }
+        let w = self.width as f32;
+        let h = self.height as f32;
+        let u = u.rem_euclid(1.0);
+        let v = v.rem_euclid(1.0);
+        let x = u * w - 0.5;
+        let y = (1.0 - v) * h - 0.5;
+        let x0 = x.floor();
+        let y0 = y.floor();
+        let tx = x - x0;
+        let ty = y - y0;
+        let p00 = self.alpha_at(x0 as i32, y0 as i32);
+        let p10 = self.alpha_at(x0 as i32 + 1, y0 as i32);
+        let p01 = self.alpha_at(x0 as i32, y0 as i32 + 1);
+        let p11 = self.alpha_at(x0 as i32 + 1, y0 as i32 + 1);
+        let a = p00 * (1.0 - tx) + p10 * tx;
+        let b = p01 * (1.0 - tx) + p11 * tx;
+        a * (1.0 - ty) + b * ty
+    }
+
+    fn alpha_at(&self, x: i32, y: i32) -> f32 {
+        let w = self.width as i32;
+        let h = self.height as i32;
+        let x = x.rem_euclid(w) as u32;
+        let y = y.rem_euclid(h) as u32;
+        self.alphas[(y * self.width + x) as usize]
     }
 }
 
@@ -388,6 +463,9 @@ struct Hit {
     roughness: f32,
     metallic: f32,
     emissive: V3,
+    alpha: f32,
+    alpha_mode: GltfAlphaMode,
+    alpha_cutoff: f32,
 }
 
 /// Order-2 SH of the procedural HDR environment (y-up).
@@ -406,6 +484,9 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         let mut normal_scale = 1.0f32;
         let mut emissive_factor = V3::new(0.0, 0.0, 0.0);
         let mut emissive_map = None;
+        let mut alpha = 1.0f32;
+        let mut alpha_mode = GltfAlphaMode::Opaque;
+        let mut alpha_cutoff = 0.5f32;
         let mut albedo_map = b.material.albedo_map.as_ref().map(|p| {
             let resolved = scene
                 .resolve_texture(p)
@@ -426,13 +507,16 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
                     roughness = gm.roughness_factor.clamp(0.04, 1.0);
                     metallic = gm.metallic_factor.clamp(0.0, 1.0);
                     albedo_map = None;
+                    alpha = gm.alpha_factor().clamp(0.0, 1.0);
+                    alpha_mode = gm.alpha_mode;
+                    alpha_cutoff = gm.alpha_cutoff.clamp(0.0, 1.0);
                     if let Some(bytes) = &gm.base_color_texture_bytes {
-                        let mut map = AlbedoMap::load_from_bytes(bytes)
+                        let mut map = AlbedoMap::load_rgba_from_bytes(bytes)
                             .unwrap_or_else(|e| panic!("gltf baseColorTexture: {e}"));
                         map.mul_factor(albedo);
                         albedo_map = Some(map);
                     } else if let Some(tex_path) = &gm.base_color_texture_path {
-                        let mut map = AlbedoMap::load(tex_path)
+                        let mut map = AlbedoMap::load_rgba(tex_path)
                             .unwrap_or_else(|e| panic!("gltf baseColorTexture {tex_path:?}: {e}"));
                         map.mul_factor(albedo);
                         albedo_map = Some(map);
@@ -540,14 +624,37 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             normal_scale,
             emissive_factor,
             emissive_map,
+            alpha,
+            alpha_mode,
+            alpha_cutoff,
         });
     }
 
     prims
 }
 
+fn surface_blocks_shadow(h: &Hit) -> bool {
+    match h.alpha_mode {
+        GltfAlphaMode::Opaque => true,
+        GltfAlphaMode::Mask => h.alpha >= h.alpha_cutoff,
+        // See-through glass should not drop a hard umbra on the courtyard.
+        GltfAlphaMode::Blend => false,
+    }
+}
+
 fn shadow_occluded(orig: V3, dir: V3, prims: &[Prim], tmax: f32) -> bool {
-    closest_hit(orig, dir, prims, EPS, tmax).is_some()
+    let mut tmin = EPS;
+    loop {
+        match closest_hit(orig, dir, prims, tmin, tmax) {
+            None => return false,
+            Some(h) => {
+                if surface_blocks_shadow(&h) {
+                    return true;
+                }
+                tmin = h.t + EPS;
+            }
+        }
+    }
 }
 
 /// True if a ray from `hit_point` toward `light_pos` hits geometry before the lamp.
@@ -615,9 +722,36 @@ pub fn render_scene_to_png(scene: &Scene, width: u32, height: u32, path: &Path) 
 }
 
 fn trace(orig: V3, dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -> V3 {
-    match closest_hit(orig, dir, prims, 0.0, f32::MAX) {
+    trace_rec(orig, dir, prims, lights, env, 0.0, MAX_BLEND_DEPTH)
+}
+
+fn trace_rec(
+    orig: V3,
+    dir: V3,
+    prims: &[Prim],
+    lights: &[Light],
+    env: &EnvSh,
+    tmin: f32,
+    depth: u32,
+) -> V3 {
+    match closest_hit(orig, dir, prims, tmin, f32::MAX) {
         None => env_radiance(dir),
-        Some(h) => shade(&h, dir, prims, lights, env),
+        Some(h) => {
+            if h.alpha_mode == GltfAlphaMode::Mask && h.alpha < h.alpha_cutoff {
+                return if depth == 0 {
+                    env_radiance(dir)
+                } else {
+                    trace_rec(orig, dir, prims, lights, env, h.t + EPS, depth)
+                };
+            }
+            let src = shade(&h, dir, prims, lights, env);
+            if h.alpha_mode == GltfAlphaMode::Blend && h.alpha < 0.999 && depth > 0 {
+                // Continue along the ray (offset by t) and composite.
+                let behind = trace_rec(orig, dir, prims, lights, env, h.t + EPS, depth - 1);
+                return src.mul(h.alpha).add(behind.mul(1.0 - h.alpha));
+            }
+            src
+        }
     }
 }
 
@@ -868,6 +1002,11 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         (Some(map), Some([u, v])) => map.sample(u, v).hadamard(prim.emissive_factor),
         _ => prim.emissive_factor,
     };
+    let tex_a = match (&prim.albedo_map, uv) {
+        (Some(map), Some([u, v])) => map.sample_alpha(u, v),
+        _ => 1.0,
+    };
+    let alpha = (prim.alpha * tex_a).clamp(0.0, 1.0);
     Hit {
         t,
         p: pnt,
@@ -876,6 +1015,9 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         roughness,
         metallic,
         emissive,
+        alpha,
+        alpha_mode: prim.alpha_mode,
+        alpha_cutoff: prim.alpha_cutoff,
     }
 }
 
@@ -1018,11 +1160,17 @@ fn contact_ao(p: V3, n: V3, prims: &[Prim]) -> f32 {
 }
 
 fn ao_ray(orig: V3, dir: V3, prims: &[Prim], max_dist: f32) -> f32 {
-    match closest_hit(orig, dir, prims, EPS, max_dist) {
-        None => 1.0,
-        Some(h) => {
-            let t = (h.t / max_dist).clamp(0.0, 1.0);
-            0.10 + 0.90 * t.sqrt()
+    let mut tmin = EPS;
+    loop {
+        match closest_hit(orig, dir, prims, tmin, max_dist) {
+            None => return 1.0,
+            Some(h) => {
+                if surface_blocks_shadow(&h) {
+                    let t = (h.t / max_dist).clamp(0.0, 1.0);
+                    return 0.10 + 0.90 * t.sqrt();
+                }
+                tmin = h.t + EPS;
+            }
         }
     }
 }

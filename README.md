@@ -1,6 +1,6 @@
-# agent-rig (increments 1–16)
+# agent-rig (increments 1–17)
 
-Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, and optional emissiveFactor × emissiveTexture). Directional and point lights both cast shadow rays. No GPU. No Three.js in the engine.
+Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, and optional alphaMode BLEND/MASK with non-1 alpha). Directional and point lights both cast shadow rays. No GPU. No Three.js in the engine.
 
 ## Increment 1
 
@@ -546,6 +546,38 @@ cd /workspace/agent-rig && ./scripts/increment16-threejs.sh
 
 Writes `artifacts/increment16/threejs-frame.png` (stock MeshStandardMaterial, same glTF emissive / emissiveMap + MR + normalMap, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450).
 
+
+## Increment 17
+
+Same courtyard as increment 16 (bowl + rock + metal ball + copper pillar with metallicRoughnessTexture + normalTexture + emissive cyan bands, directional + shadowed point light). Single still. A new thin glass pane (`meshes/pane.gltf`) stands in front of the look: `alphaMode` BLEND, `baseColorFactor` `[0.75, 0.9, 1.0, 0.32]`. The raytracer shades the pane, continues the ray, and blends `src * alpha + behind * (1 - alpha)` (recurse depth 4). No refraction / IOR / transmission. The pillar stays opaque. Scene-JSON has no alpha map.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment17.sh
+```
+
+Writes:
+
+- `artifacts/increment17/scene.json` — increment-16 courtyard plus the pane
+- `artifacts/increment17/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment17/frame.png` — our renderer, 800x450, post-step pose
+- `artifacts/increment17/threejs-frame.png` — stock Three.js, same pose (`transparent` + opacity from the glTF, no IBL/tonemap)
+
+### CLI
+
+```bash
+agent-rig increment17 --out artifacts/increment17
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment17-threejs.sh
+```
+
+Writes `artifacts/increment17/threejs-frame.png` (stock MeshStandardMaterial, pane `transparent` + opacity 0.32, same glTF emissive / MR / normalMap on the pillar, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450).
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
@@ -553,7 +585,7 @@ JSON object with `camera`, `lights`, and `bodies`.
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`
 - `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path)
-- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel. When `normalTexture` is present, RGB is unpacked to a tangent-space normal (2c−1) and TBN·n_ts replaces the geometric N for lighting (TANGENT accessor, or TBN derived from triangle positions + TEXCOORD_0). Scene JSON has no normal map. When `emissiveFactor` and/or `emissiveTexture` are present, sampled emissive is `factor * textureRGB` (no texture → factor only) and is added to outgoing radiance after lighting. Scene JSON has no emissive map.
+- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel. When `normalTexture` is present, RGB is unpacked to a tangent-space normal (2c−1) and TBN·n_ts replaces the geometric N for lighting (TANGENT accessor, or TBN derived from triangle positions + TEXCOORD_0). Scene JSON has no normal map. When `emissiveFactor` and/or `emissiveTexture` are present, sampled emissive is `factor * textureRGB` (no texture → factor only) and is added to outgoing radiance after lighting. Scene JSON has no emissive map. When `alphaMode` is `BLEND`, the surface is shaded then the ray continues and the results are blended (`src * alpha + behind * (1-alpha)`); `MASK` discards below `alphaCutoff`. Alpha is `baseColorFactor[3]` times baseColorTexture A if present. No refraction.
 
 Gravity is `[0, -9.81, 0]`.
 
@@ -594,3 +626,5 @@ Increment 14: the glTF has `normalTexture`; the loaded mesh shades with sampled 
 Increment 15: same courtyard and lights; the ball has a non-zero initial linear velocity; physics is stepped across 8 frames from the increment-11 camera (no orbit); `frame_00` and `frame_07` are not copies; after the sim the dump still records the pillar collider and a contact involving it; `increment15` writes scene + physics dump + the 8 PNGs.
 
 Increment 16: the glTF has `emissiveTexture` (and `emissiveFactor`); the loaded mesh samples `factor * textureRGB` (non-zero, not the no-texture fallback); after stepping there is a contact involving the glTF body and the dump records its collider type; `increment16` writes scene + physics dump + our PNG.
+
+Increment 17: a glTF has `alphaMode` BLEND (or MASK) and sampled alpha is not 1.0 everywhere; the courtyard (bowl + rock + ball + pillar + pane) stays; after stepping there is a contact involving a glTF body and the dump records a collider type; `increment17` writes scene + physics dump + our PNG.
