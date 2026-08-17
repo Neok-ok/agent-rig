@@ -436,8 +436,10 @@ for (const body of spec.bodies) {
   const sheen = (body.material && body.material.sheen) || 0;
   const sheenRoughness = (body.material && body.material.sheen_roughness);
   const sheenColor = (body.material && body.material.sheen_color);
+  const anisotropy = (body.material && body.material.anisotropy) || 0;
+  const anisotropyRotation = (body.material && body.material.anisotropy_rotation) || 0;
   const hasVolume = !!(gltfPbr && gltfPbr.attenuationDistance !== undefined && Number.isFinite(gltfPbr.attenuationDistance));
-  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0) || clearcoat > 0 || sheen > 0 || hasVolume;
+  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0) || clearcoat > 0 || sheen > 0 || hasVolume || anisotropy > 0;
   const MatClass = usePhysical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
   const mat = new MatClass({
     color: new THREE.Color(albedo[0], albedo[1], albedo[2]),
@@ -452,6 +454,13 @@ for (const body of spec.bodies) {
     mat.sheen = sheen;
     if (sheenRoughness !== undefined && sheenRoughness !== null) mat.sheenRoughness = sheenRoughness;
     if (sheenColor) mat.sheenColor = new THREE.Color(sheenColor[0], sheenColor[1], sheenColor[2]);
+  }
+  if (anisotropy > 0) {
+    mat.anisotropy = anisotropy;
+    mat.anisotropyRotation = anisotropyRotation;
+    if (typeof geom.computeTangents === 'function') {
+      try { geom.computeTangents(); } catch (e) { /* missing uv/index */ }
+    }
   }
   if (usePhysical && gltfPbr && gltfPbr.transmission > 0) {
     mat.transmission = gltfPbr.transmission;

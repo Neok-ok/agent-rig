@@ -1,6 +1,6 @@
-# agent-rig (increments 1–24)
+# agent-rig (increments 1–25)
 
-Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, and optional KHR_materials_volume Beer-Lambert attenuation). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
+Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, and optional authored anisotropy + anisotropy_rotation on the gold ball). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
 ## Increment 1
 
@@ -798,14 +798,45 @@ cd /workspace/agent-rig && ./scripts/increment24-threejs.sh
 
 Writes `artifacts/increment24/threejs-frame.png` (stock MeshPhysicalMaterial with `attenuationColor` + `attenuationDistance` + `thickness` from the pane glTF, ambient 0.25 + directional + RectAreaLight, no env map, no tonemap, 800x450).
 
+## Increment 25
+
+Same courtyard as increment 24 (bowl + rock + metal ball with clearcoat, copper pillar with MR + normal + emissive + AO, glass pane with transmission + IOR + volume attenuation, crate, bench with sheen, directional + area light). Single still, same camera. The gold ball authors `anisotropy` + `anisotropy_rotation` (keep the existing clearcoat). Specular uses an anisotropic GGX lobe (Burley/Kulla): tangent/bitangent from a stable up vector, rotated by the authored rotation around N; `at = roughness * (1 + anisotropy)`, `ab = roughness * (1 - anisotropy)`. The highlight stretches into a brushed-metal streak, obvious vs increment 24's circular coat highlight. Strength and direction come from the authored fields, not a hidden constant. Applied on lights and IBL spec. No new lights, no new bodies, no IBL rewrite.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment25.sh
+```
+
+Writes:
+
+- `artifacts/increment25/scene.json` — increment-24 courtyard plus anisotropy on the gold ball (own scene JSON)
+- `artifacts/increment25/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment25/frame.png` — our renderer, 800x450, post-step pose
+- `artifacts/increment25/threejs-frame.png` — stock Three.js, same pose (`MeshPhysicalMaterial` anisotropy + anisotropyRotation, no env map, no tonemap)
+
+### CLI
+
+```bash
+agent-rig increment25 --out artifacts/increment25
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment25-threejs.sh
+```
+
+Writes `artifacts/increment25/threejs-frame.png` (stock MeshPhysicalMaterial with `anisotropy` + `anisotropyRotation` from scene JSON, ambient 0.25 + directional + RectAreaLight, no env map, no tonemap, 800x450).
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
 
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`; or `type: "area"` with `position`, `size` `[width, height]`, `color`, `intensity`, optional `normal` (default `[0,-1,0]`). Area softness comes from the authored `size`.
-- `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path, optional `clearcoat` + `clearcoat_roughness`, optional `sheen` + `sheen_roughness` + `sheen_color`)
-- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel. When `normalTexture` is present, RGB is unpacked to a tangent-space normal (2c−1) and TBN·n_ts replaces the geometric N for lighting (TANGENT accessor, or TBN derived from triangle positions + TEXCOORD_0). Scene JSON has no normal map. When `emissiveFactor` and/or `emissiveTexture` are present, sampled emissive is `factor * textureRGB` (no texture → factor only) and is added to outgoing radiance after lighting. Scene JSON has no emissive map. When `alphaMode` is `BLEND`, the surface is shaded then the ray continues and the results are blended (`src * alpha + behind * (1-alpha)`); `MASK` discards below `alphaCutoff`. Alpha is `baseColorFactor[3]` times baseColorTexture A if present. When `KHR_materials_transmission.transmissionFactor` is > 0, the continuation uses Snell refraction with the authored IOR (`materials.ior` or `KHR_materials_ior`, glass ~1.5): `eta = 1/ior` entering, `ior` leaving. No hidden bend constant. When `KHR_materials_volume` is present, the enter→exit path through the volume applies Beer-Lambert: `T = attenuationColor.pow(distance / attenuationDistance)` per channel, multiplied onto the radiance behind the pane. `attenuationColor` and `attenuationDistance` are authored (not hidden constants); this is volume absorption, not a change to `baseColorFactor`. When `occlusionTexture` is present, the R channel is sampled as AO (0 = occluded, 1 = open) and multiplies IBL / ambient; directional and area direct lighting are not multiplied by AO. Scene JSON has no AO map.
+- `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path, optional `clearcoat` + `clearcoat_roughness`, optional `sheen` + `sheen_roughness` + `sheen_color`, optional `anisotropy` + `anisotropy_rotation`)
+- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel. When `normalTexture` is present, RGB is unpacked to a tangent-space normal (2c−1) and TBN·n_ts replaces the geometric N for lighting (TANGENT accessor, or TBN derived from triangle positions + TEXCOORD_0). Scene JSON has no normal map. When `emissiveFactor` and/or `emissiveTexture` are present, sampled emissive is `factor * textureRGB` (no texture → factor only) and is added to outgoing radiance after lighting. Scene JSON has no emissive map. When `alphaMode` is `BLEND`, the surface is shaded then the ray continues and the results are blended (`src * alpha + behind * (1-alpha)`); `MASK` discards below `alphaCutoff`. Alpha is `baseColorFactor[3]` times baseColorTexture A if present. When `KHR_materials_transmission.transmissionFactor` is > 0, the continuation uses Snell refraction with the authored IOR (`materials.ior` or `KHR_materials_ior`, glass ~1.5): `eta = 1/ior` entering, `ior` leaving. No hidden bend constant. When `KHR_materials_volume` is present, the enter→exit path through the volume applies Beer-Lambert: `T = attenuationColor.pow(distance / attenuationDistance)` per channel, multiplied onto the radiance behind the pane. `attenuationColor` and `attenuationDistance` are authored (not hidden constants); this is volume absorption, not a change to `baseColorFactor`. When `occlusionTexture` is present, the R channel is sampled as AO (0 = occluded, 1 = open) and multiplies IBL / ambient; directional and area direct lighting are not multiplied by AO. Scene JSON has no AO map. Optional `anisotropy` (0–1) and `anisotropy_rotation` (radians) on a body material stretch the specular into a brushed-metal GGX lobe; strength and direction are the authored values (default 0 = isotropic).
 
 Gravity is `[0, -9.81, 0]`.
 
@@ -862,3 +893,5 @@ Increment 22: scene has clearcoat + clearcoat_roughness on the gold ball; courty
 Increment 23: scene has sheen + sheen_color on the bench; courtyard including crate + pane + area light + AO pillar + clearcoat ball stays; after stepping there is a contact involving a glTF body and the dump records its collider type; `increment23` writes scene + physics dump + our PNG.
 
 Increment 24: pane glTF has `KHR_materials_volume` (`attenuationColor` not white + authored `attenuationDistance`); courtyard including crate + sheen bench + area light + AO pillar + clearcoat ball stays; after stepping there is a contact involving a glTF body and the dump records its collider type; `increment24` writes scene + physics dump + our PNG.
+
+Increment 25: scene has anisotropy + anisotropy_rotation on the gold ball; courtyard including crate + sheen bench + volume pane + area light + AO pillar + clearcoat stays; after stepping there is a contact involving a glTF body and the dump records its collider type; `increment25` writes scene + physics dump + our PNG.

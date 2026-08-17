@@ -164,6 +164,8 @@ struct Prim {
     sheen: f32,
     sheen_roughness: f32,
     sheen_color: V3,
+    anisotropy: f32,
+    anisotropy_rotation: f32,
 }
 
 struct AlbedoMap {
@@ -489,6 +491,8 @@ struct Hit {
     sheen: f32,
     sheen_roughness: f32,
     sheen_color: V3,
+    anisotropy: f32,
+    anisotropy_rotation: f32,
 }
 
 /// Order-2 SH of the procedural HDR environment (y-up).
@@ -522,6 +526,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         let sheen = b.material.sheen.clamp(0.0, 1.0);
         let sheen_roughness = b.material.sheen_roughness;
         let sheen_color = V3::from_arr(b.material.sheen_color);
+        let anisotropy = b.material.anisotropy.clamp(0.0, 1.0);
+        let anisotropy_rotation = b.material.anisotropy_rotation;
         let mut albedo_map = b.material.albedo_map.as_ref().map(|p| {
             let resolved = scene
                 .resolve_texture(p)
@@ -691,6 +697,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             sheen,
             sheen_roughness,
             sheen_color,
+            anisotropy,
+            anisotropy_rotation,
         });
     }
 
@@ -1192,6 +1200,8 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         sheen: prim.sheen,
         sheen_roughness: prim.sheen_roughness,
         sheen_color: prim.sheen_color,
+        anisotropy: prim.anisotropy,
+        anisotropy_rotation: prim.anisotropy_rotation,
     }
 }
 
@@ -1270,9 +1280,17 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
     let k_d = V3::new(1.0 - f_diff.x, 1.0 - f_diff.y, 1.0 - f_diff.z).mul(1.0 - h.metallic);
     let diffuse_ibl = k_d.hadamard(h.albedo).hadamard(irradiance).mul(ao);
 
+    let (tan_aniso, bit_aniso) = anisotropy_frame(n, h.anisotropy_rotation);
     // Specular IBL: roughness-blurred environment in the reflection direction.
+    // Anisotropic materials use a bent reflection + stretched env cone so the
+    // brushed streak reads. Strength/direction come from authored fields.
     let r = n.mul(2.0 * n_dot_v).sub(v).norm();
-    let spec_env = env_specular(r, n, h.roughness);
+    let spec_env = if h.anisotropy > 1e-4 {
+        let r_ani = bent_aniso_reflection(n, v, tan_aniso, h.anisotropy);
+        env_specular_aniso(r_ani, tan_aniso, bit_aniso, h.roughness, h.anisotropy)
+    } else {
+        env_specular(r, n, h.roughness)
+    };
     let spec_brdf = env_brdf(n_dot_v, h.roughness, f0);
     // Contact AO keeps the 0.25 floor; sampled texture AO multiplies the whole IBL spec.
     let spec_ao = (0.25 + 0.75 * contact) * tex_ao;
@@ -1284,13 +1302,66 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
 
     let mut color = diffuse_ibl.add(specular_ibl);
 
+    // Anisotropic IBL lobe: evaluate the real GGX against the env sun and
+    // along the authored tangent so the env streak is the lobe itself.
+    if h.anisotropy > 1e-4 {
+        let sun = V3::new(0.45, 1.0, 0.35).norm();
+        let a = h.anisotropy;
+        let dirs = [
+            sun,
+            r.add(tan_aniso.mul(a)).norm(),
+            r.add(tan_aniso.mul(-a)).norm(),
+            r.add(tan_aniso.mul(0.5 * a)).norm(),
+            r.add(tan_aniso.mul(-0.5 * a)).norm(),
+        ];
+        for dir in dirs {
+            let n_dot_l = n.dot(dir).max(0.0);
+            if n_dot_l <= 0.0 {
+                continue;
+            }
+            let rad = env_radiance(dir).mul(spec_ao);
+            color = color.add(cook_torrance_aniso(
+                h.albedo,
+                h.roughness,
+                h.metallic,
+                n,
+                v,
+                dir,
+                n_dot_l,
+                rad,
+                tan_aniso,
+                bit_aniso,
+                h.anisotropy,
+            ));
+            if h.clearcoat > 1e-4 {
+                color = color.add(clearcoat_specular(
+                    h.clearcoat_roughness.clamp(0.04, 1.0),
+                    n,
+                    v,
+                    dir,
+                    n_dot_l,
+                    rad,
+                    h.clearcoat,
+                    tan_aniso,
+                    bit_aniso,
+                    h.anisotropy,
+                ));
+            }
+        }
+    }
+
     // Extra dielectric clearcoat IBL (F0 ≈ 0.04). Softness is authored
     // clearcoat_roughness, not a hidden constant. On top of base MR, not a tweak.
     if h.clearcoat > 1e-4 {
         let cc_w = h.clearcoat.clamp(0.0, 1.0);
         let cc_rough = h.clearcoat_roughness.clamp(0.04, 1.0);
         let cc_f0 = V3::new(0.04, 0.04, 0.04);
-        let cc_env = env_specular(r, n, cc_rough);
+        let cc_env = if h.anisotropy > 1e-4 {
+            let r_ani = bent_aniso_reflection(n, v, tan_aniso, h.anisotropy);
+            env_specular_aniso(r_ani, tan_aniso, bit_aniso, cc_rough, h.anisotropy)
+        } else {
+            env_specular(r, n, cc_rough)
+        };
         let cc_brdf = env_brdf(n_dot_v, cc_rough, cc_f0);
         color = color.add(
             cc_env
@@ -1350,8 +1421,9 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                 }
                 // Keep the sun, but do not let intensity 3 nuke the IBL Y-gradient.
                 let radiance = V3::from_arr(*lcol).mul(*intensity * 0.58);
-                color = color.add(cook_torrance(
+                color = color.add(base_specular(
                     h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
+                    tan_aniso, bit_aniso, h.anisotropy,
                 ));
                 if h.clearcoat > 1e-4 {
                     color = color.add(clearcoat_specular(
@@ -1362,6 +1434,9 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                         n_dot_l,
                         radiance,
                         h.clearcoat,
+                        tan_aniso,
+                        bit_aniso,
+                        h.anisotropy,
                     ));
                 }
                 if h.sheen > 1e-4 {
@@ -1396,8 +1471,9 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                 }
                 let atten = 1.0 / (dist * dist);
                 let radiance = V3::from_arr(*lcol).mul(*intensity * atten);
-                color = color.add(cook_torrance(
+                color = color.add(base_specular(
                     h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
+                    tan_aniso, bit_aniso, h.anisotropy,
                 ));
                 if h.clearcoat > 1e-4 {
                     color = color.add(clearcoat_specular(
@@ -1408,6 +1484,9 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                         n_dot_l,
                         radiance,
                         h.clearcoat,
+                        tan_aniso,
+                        bit_aniso,
+                        h.anisotropy,
                     ));
                 }
                 if h.sheen > 1e-4 {
@@ -1455,8 +1534,9 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                         }
                         let atten = 1.0 / (dist * dist);
                         let radiance = V3::from_arr(*lcol).mul(*intensity * atten);
-                        acc = acc.add(cook_torrance(
+                        acc = acc.add(base_specular(
                             h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
+                            tan_aniso, bit_aniso, h.anisotropy,
                         ));
                         if h.clearcoat > 1e-4 {
                             acc = acc.add(clearcoat_specular(
@@ -1467,6 +1547,9 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                                 n_dot_l,
                                 radiance,
                                 h.clearcoat,
+                                tan_aniso,
+                                bit_aniso,
+                                h.anisotropy,
                             ));
                         }
                         if h.sheen > 1e-4 {
@@ -1501,15 +1584,25 @@ fn clearcoat_specular(
     n_dot_l: f32,
     radiance: V3,
     weight: f32,
+    t: V3,
+    b: V3,
+    anisotropy: f32,
 ) -> V3 {
     let h = v.add(l).norm();
     let n_dot_v = n.dot(v).max(1e-4);
-    let n_dot_h = n.dot(h).max(0.0);
     let v_dot_h = v.dot(h).max(0.0);
     let f0 = V3::new(0.04, 0.04, 0.04);
     let f = fresnel_schlick(v_dot_h, f0);
-    let d = ggx_d(n_dot_h, roughness);
-    let g = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let (d, g) = if anisotropy > 1e-4 {
+        let (at, ab) = aniso_alphas(roughness, anisotropy);
+        (
+            ggx_d_aniso(h, n, t, b, at, ab),
+            smith_g1_aniso(v, n, t, b, at, ab) * smith_g1_aniso(l, n, t, b, at, ab),
+        )
+    } else {
+        let n_dot_h = n.dot(h).max(0.0);
+        (ggx_d(n_dot_h, roughness), geometry_smith(n_dot_v, n_dot_l, roughness))
+    };
     let spec = f.mul(d * g / (4.0 * n_dot_v * n_dot_l + 1e-4));
     spec.hadamard(radiance).mul(n_dot_l * weight)
 }
@@ -1552,6 +1645,141 @@ fn charlie_d(n_dot_h: f32, roughness: f32) -> f32 {
 /// Ashikhmin visibility used with Charlie sheen.
 fn ashikhmin_v(n_dot_l: f32, n_dot_v: f32) -> f32 {
     (1.0 / (4.0 * (n_dot_l + n_dot_v - n_dot_l * n_dot_v))).clamp(0.0, 1.0)
+}
+
+fn base_specular(
+    albedo: V3,
+    roughness: f32,
+    metallic: f32,
+    n: V3,
+    v: V3,
+    l: V3,
+    n_dot_l: f32,
+    radiance: V3,
+    t: V3,
+    b: V3,
+    anisotropy: f32,
+) -> V3 {
+    if anisotropy > 1e-4 {
+        cook_torrance_aniso(
+            albedo, roughness, metallic, n, v, l, n_dot_l, radiance, t, b, anisotropy,
+        )
+    } else {
+        cook_torrance(albedo, roughness, metallic, n, v, l, n_dot_l, radiance)
+    }
+}
+
+/// Stable tangent/bitangent on a sphere: up × N, then rotate around N by
+/// the authored anisotropy_rotation (radians).
+fn anisotropy_frame(n: V3, rotation: f32) -> (V3, V3) {
+    let up = if n.y.abs() < 0.9 {
+        V3::new(0.0, 1.0, 0.0)
+    } else {
+        V3::new(1.0, 0.0, 0.0)
+    };
+    let t0 = up.cross(n).norm();
+    let b0 = n.cross(t0).norm();
+    let c = rotation.cos();
+    let s = rotation.sin();
+    let t = t0.mul(c).add(b0.mul(s)).norm();
+    let b = n.cross(t).norm();
+    (t, b)
+}
+
+/// Filament/Three.js bent-normal reflection: mix N toward the anisotropic
+/// normal so the env lookup stretches along the tangent.
+fn bent_aniso_reflection(n: V3, v: V3, t: V3, anisotropy: f32) -> V3 {
+    let aniso_t = t.cross(v);
+    let bent_n = if aniso_t.len() > 1e-6 {
+        let aniso_n = aniso_t.norm().cross(t).norm();
+        lerp(n, aniso_n, anisotropy).norm()
+    } else {
+        n
+    };
+    let ndv = bent_n.dot(v).max(1e-4);
+    bent_n.mul(2.0 * ndv).sub(v).norm()
+}
+
+/// Anisotropic env cone: wider along T, tighter along B. Stretch from
+/// authored anisotropy (`at = roughness*(1+a)`, `ab = roughness*(1-a)`).
+/// Authored stretch: at = roughness * (1 + anisotropy),
+/// ab = roughness * (1 - anisotropy). Strength is the authored field.
+fn aniso_alphas(roughness: f32, anisotropy: f32) -> (f32, f32) {
+    // Standard stretch in GGX-alpha space: α = roughness², then ± authored anisotropy.
+    let alpha = (roughness * roughness).max(1e-5);
+    let at = (alpha * (1.0 + anisotropy)).max(1e-5);
+    let ab = (alpha * (1.0 - anisotropy)).max(1e-5);
+    (at, ab)
+}
+
+fn env_specular_aniso(r: V3, t: V3, b: V3, roughness: f32, anisotropy: f32) -> V3 {
+    // Cone in roughness space so the env streak length follows authored anisotropy.
+    let ab = (roughness * (1.0 - anisotropy)).clamp(0.01, 1.0);
+    let r = r.norm();
+    let mut t_p = t.sub(r.mul(t.dot(r)));
+    let mut b_p = b.sub(r.mul(b.dot(r)));
+    t_p = if t_p.len() > 1e-5 { t_p.norm() } else { t };
+    b_p = if b_p.len() > 1e-5 { b_p.norm() } else { b };
+    // Streak length follows authored anisotropy (offset along T).
+    let kt = anisotropy.max(1e-4);
+    let kb = ab.max(1e-4);
+    let mut acc = env_radiance(r);
+    acc = acc.add(env_radiance(r.add(t_p.mul(kt)).norm()));
+    acc = acc.add(env_radiance(r.add(t_p.mul(-kt)).norm()));
+    acc = acc.add(env_radiance(r.add(t_p.mul(2.0 * kt)).norm()));
+    acc = acc.add(env_radiance(r.add(t_p.mul(-2.0 * kt)).norm()));
+    acc = acc.add(env_radiance(r.add(b_p.mul(kb)).norm()));
+    acc = acc.add(env_radiance(r.add(b_p.mul(-kb)).norm()));
+    acc.mul(1.0 / 7.0)
+}
+
+/// Burley/Kulla anisotropic GGX NDF.
+fn ggx_d_aniso(h: V3, n: V3, t: V3, b: V3, at: f32, ab: f32) -> f32 {
+    let ht = h.dot(t) / at;
+    let hb = h.dot(b) / ab;
+    let hn = h.dot(n);
+    let d = ht * ht + hb * hb + hn * hn;
+    1.0 / (PI * at * ab * d * d + 1e-7)
+}
+
+/// Heitz anisotropic Smith G1.
+fn smith_g1_aniso(v: V3, n: V3, t: V3, b: V3, at: f32, ab: f32) -> f32 {
+    let n_dot_v = n.dot(v).abs().max(1e-4);
+    let ax = at * v.dot(t);
+    let ay = ab * v.dot(b);
+    let lambda = (ax * ax + ay * ay) / (n_dot_v * n_dot_v);
+    2.0 / (1.0 + (1.0 + lambda).sqrt())
+}
+
+/// Cook-Torrance with an anisotropic GGX lobe. `at/ab` stretch from the
+/// authored anisotropy; tangent direction from authored anisotropy_rotation.
+fn cook_torrance_aniso(
+    albedo: V3,
+    roughness: f32,
+    metallic: f32,
+    n: V3,
+    v: V3,
+    l: V3,
+    n_dot_l: f32,
+    radiance: V3,
+    t: V3,
+    b: V3,
+    anisotropy: f32,
+) -> V3 {
+    let h = v.add(l).norm();
+    let n_dot_v = n.dot(v).max(1e-4);
+    let v_dot_h = v.dot(h).max(0.0);
+    let (at, ab) = aniso_alphas(roughness, anisotropy);
+    let f0 = V3::new(0.04, 0.04, 0.04)
+        .mul(1.0 - metallic)
+        .add(albedo.mul(metallic));
+    let f = fresnel_schlick(v_dot_h, f0);
+    let d = ggx_d_aniso(h, n, t, b, at, ab);
+    let g = smith_g1_aniso(v, n, t, b, at, ab) * smith_g1_aniso(l, n, t, b, at, ab);
+    let spec = f.mul(d * g / (4.0 * n_dot_v * n_dot_l + 1e-4));
+    let k_d = V3::new(1.0 - f.x, 1.0 - f.y, 1.0 - f.z).mul(1.0 - metallic);
+    let diffuse = albedo.mul(1.0 / PI);
+    k_d.hadamard(diffuse).add(spec).hadamard(radiance).mul(n_dot_l)
 }
 
 fn cook_torrance(albedo: V3, roughness: f32, metallic: f32, n: V3, v: V3, l: V3, n_dot_l: f32, radiance: V3) -> V3 {
