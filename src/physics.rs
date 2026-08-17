@@ -314,6 +314,45 @@ impl PhysicsWorld {
                         motor_max_force: None,
                     });
                 }
+                Joint::Ball {
+                    body_a,
+                    body_b,
+                    anchor,
+                } => {
+                    let ha = *self.body_handles.get(body_a).ok_or_else(|| {
+                        format!("ball body_a '{body_a}' not found")
+                    })?;
+                    let hb = *self.body_handles.get(body_b).ok_or_else(|| {
+                        format!("ball body_b '{body_b}' not found")
+                    })?;
+                    let rb_a = &self.rigid_body_set[ha];
+                    let rb_b = &self.rigid_body_set[hb];
+                    let world_anchor = point![anchor[0], anchor[1], anchor[2]];
+                    let local_a = rb_a.position().inverse() * world_anchor;
+                    let local_b = rb_b.position().inverse() * world_anchor;
+                    let ball = SphericalJointBuilder::new()
+                        .local_anchor1(local_a)
+                        .local_anchor2(local_b)
+                        .contacts_enabled(false)
+                        .build();
+                    self.impulse_joint_set.insert(ha, hb, ball, true);
+                    if let Some(rb) = self.rigid_body_set.get_mut(hb) {
+                        // Hang damper so the charm settles below the socket
+                        // instead of spinning as a T-pose.
+                        rb.set_angular_damping(3.0);
+                        rb.set_linear_damping(1.0);
+                    }
+                    self.authored_joints.push(PhysicsJoint {
+                        kind: "ball".into(),
+                        body_a: body_a.clone(),
+                        body_b: body_b.clone(),
+                        anchor: *anchor,
+                        axis: [0.0, 0.0, 0.0],
+                        limits: None,
+                        motor_target_velocity: None,
+                        motor_max_force: None,
+                    });
+                }
             }
         }
         Ok(())
