@@ -797,6 +797,13 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         ));
     }
 
+    push_authored_ray_prims(scene, &mut prims);
+    push_authored_sweep_prims(scene, &mut prims);
+
+    prims
+}
+
+fn push_authored_ray_prims(scene: &Scene, prims: &mut Vec<Prim>) {
     // Authored physics rays: thin magenta segment (origin to hit, or
     // origin+dir*max_toi on a miss) plus a yellow hit marker. Hits come
     // from the dump (copied onto the scene); this is debug draw, not a
@@ -839,8 +846,48 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             ));
         }
     }
+}
 
-    prims
+fn push_authored_sweep_prims(scene: &Scene, prims: &mut Vec<Prim>) {
+    // Authored physics sweeps: translucent box at the hit pose
+    // (origin + dir*toi, or origin+dir*max_toi on a miss) plus a
+    // small hit marker. Hits come from the dump (copied onto the
+    // scene); this is debug draw, not a renderer-side shapecast.
+    for sweep in &scene.shapecasts {
+        let Shape::Box { size } = &sweep.shape else {
+            continue;
+        };
+        let origin = V3::from_arr(sweep.origin);
+        let dir = V3::from_arr(sweep.direction).norm();
+        let hit = scene.sweep_hits.iter().find(|h| h.sweep == sweep.id);
+        let toi = if let Some(h) = hit {
+            h.toi
+        } else {
+            sweep.max_toi
+        };
+        let center = origin.add(dir.mul(toi));
+        let half = V3::new(size[0] * 0.5, size[1] * 0.5, size[2] * 0.5);
+        prims.push(debug_prim(
+            PrimKind::Box { half },
+            center,
+            Quat::from_wxyz([1.0, 0.0, 0.0, 0.0]),
+            if hit.is_some() { V3::new(0.15, 0.85, 0.95) } else { V3::new(1.0, 0.45, 0.12) },
+            V3::new(0.0, 0.0, 0.0),
+            0.22,
+            GltfAlphaMode::Blend,
+        ));
+        if let Some(h) = hit {
+            prims.push(debug_prim(
+                PrimKind::Sphere { radius: 0.055 },
+                V3::from_arr(h.point),
+                Quat::from_wxyz([1.0, 0.0, 0.0, 0.0]),
+                V3::new(1.0, 0.92, 0.15),
+                V3::new(10.0, 8.5, 0.4),
+                1.0,
+                GltfAlphaMode::Opaque,
+            ));
+        }
+    }
 }
 
 fn quat_from_to(from: V3, to: V3) -> Quat {

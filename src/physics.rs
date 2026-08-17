@@ -1,8 +1,9 @@
+use rapier3d::parry::query::ShapeCastOptions;
 use rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::scene::{Joint, MeshCollider, RayHit, Scene, Shape, Trigger};
+use crate::scene::{Joint, MeshCollider, RayHit, Scene, Shape, SweepHit, Trigger};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhysicsDump {
@@ -19,6 +20,9 @@ pub struct PhysicsDump {
     /// Authored-ray hits after the last step. Misses are omitted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ray_hits: Vec<RayHit>,
+    /// Authored-shapecast hits after the last step. Misses are omitted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sweep_hits: Vec<SweepHit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -577,6 +581,58 @@ impl PhysicsWorld {
         hits
     }
 
+    fn snapshot_sweep_hits(&self, scene: &Scene) -> Vec<SweepHit> {
+        let mut hits = Vec::new();
+        for sweep in &scene.shapecasts {
+            let Shape::Box { size } = &sweep.shape else {
+                continue;
+            };
+            let dir = vector![sweep.direction[0], sweep.direction[1], sweep.direction[2]];
+            let len = dir.norm();
+            if len < 1e-6 {
+                continue;
+            }
+            let dir = dir / len;
+            let pos = Isometry::translation(sweep.origin[0], sweep.origin[1], sweep.origin[2]);
+            let shape = Cuboid::new(vector![size[0] * 0.5, size[1] * 0.5, size[2] * 0.5]);
+            let mut filter = QueryFilter::default().exclude_sensors();
+            // Crate convex hull occupies the drawer front at z=1.02; don't let it steal the sweep.
+            if let Some(&crate_body) = self.body_handles.get("crate") {
+                filter = filter.exclude_rigid_body(crate_body);
+            }
+            let options = ShapeCastOptions::with_max_time_of_impact(sweep.max_toi);
+            let Some((handle, hit)) = self.query_pipeline.cast_shape(
+                &self.rigid_body_set,
+                &self.collider_set,
+                &pos,
+                &dir,
+                &shape,
+                options,
+                filter,
+            ) else {
+                continue;
+            };
+            let Some(body) = self.collider_to_id.get(&handle) else {
+                continue;
+            };
+            let toi = hit.time_of_impact;
+            let pt = [
+                sweep.origin[0] + dir.x * toi,
+                sweep.origin[1] + dir.y * toi,
+                sweep.origin[2] + dir.z * toi,
+            ];
+            let n = hit.normal1.into_inner();
+            hits.push(SweepHit {
+                sweep: sweep.id.clone(),
+                body: body.clone(),
+                point: pt,
+                normal: [n.x, n.y, n.z],
+                toi,
+            });
+        }
+        hits
+    }
+
     fn snapshot_frame(&self, step: u32) -> TrajectoryFrame {
         TrajectoryFrame {
             step,
@@ -600,6 +656,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         joints: world.authored_joints.clone(),
         overlaps: world.snapshot_overlaps(),
         ray_hits: world.snapshot_ray_hits(scene),
+        sweep_hits: world.snapshot_sweep_hits(scene),
     })
 }
 

@@ -651,6 +651,44 @@ for (const ray of (spec.raycasts || [])) {
   }
 }
 
+// Authored physics sweeps: debug box from dump hits. Three.js does not shapecast.
+const sweepHits = {};
+for (const h of (dump.sweep_hits || [])) {
+  if (h && h.sweep) sweepHits[h.sweep] = h;
+}
+for (const sweep of (spec.shapecasts || [])) {
+  if (!sweep.shape || sweep.shape.type !== 'box') continue;
+  const o = sweep.origin || [0, 0, 0];
+  const d = sweep.direction || [0, -1, 0];
+  const maxToi = sweep.max_toi === undefined ? 1 : sweep.max_toi;
+  const hit = sweepHits[sweep.id];
+  const toi = (hit && hit.toi !== undefined) ? hit.toi : maxToi;
+  const center = [o[0] + d[0] * toi, o[1] + d[1] * toi, o[2] + d[2] * toi];
+  const geom = new THREE.BoxGeometry(...sweep.shape.size);
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(1.0, 0.45, 0.08),
+    roughness: 0.35,
+    metalness: 0.0,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.position.fromArray(center);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  scene.add(mesh);
+  const hitPoint = hit && hit.point;
+  if (hitPoint) {
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.05, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffee26 }),
+    );
+    marker.position.fromArray(hitPoint);
+    scene.add(marker);
+  }
+}
+
 document.body.appendChild(renderer.domElement);
 renderer.render(scene, camera);
 
