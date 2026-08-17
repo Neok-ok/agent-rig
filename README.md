@@ -1,4 +1,4 @@
-# agent-rig (increments 1–20)
+# agent-rig (increments 1–21)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), and optional KHR_materials_transmission + IOR with Snell refraction). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -673,6 +673,37 @@ cd /workspace/agent-rig && ./scripts/increment20-threejs.sh
 
 Writes `artifacts/increment20/threejs-frame.png` (stock MeshPhysicalMaterial with `transmission` and `ior` from the glTF, ambient 0.25 + directional + RectAreaLight, no env map, no tonemap, 800x450). Ours still wins on IBL + real Snell vs stock.
 
+## Increment 21
+
+Same courtyard as increment 20 (bowl + rock + metal ball + copper pillar with MR + normal + emissive + AO, glass pane with transmission + IOR, directional + area light). Single still, same camera. Two new authored mesh bodies rest on the bowl floor: a wood crate (`meshes/crate.obj`, convex_hull) left-front of the rock, and a low bench (`meshes/bench.obj`, trimesh) right of the rock / in front of the pillar. Seven bodies total. No new light types, no clearcoat, no IBL rewrite.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment21.sh
+```
+
+Writes:
+
+- `artifacts/increment21/scene.json` — increment-20 courtyard plus crate and bench (own scene JSON)
+- `artifacts/increment21/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment21/frame.png` — our renderer, 800x450, post-step pose
+- `artifacts/increment21/threejs-frame.png` — stock Three.js, same pose (no env map, no tonemap)
+
+### CLI
+
+```bash
+agent-rig increment21 --out artifacts/increment21
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment21-threejs.sh
+```
+
+Writes `artifacts/increment21/threejs-frame.png` (stock MeshStandardMaterial / MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, no env map, no tonemap, 800x450). Ours still wins on IBL + refraction.
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
@@ -729,3 +760,5 @@ Increment 18: the scene has an area light (`position`, `size`, `color`, `intensi
 Increment 19: the glTF has `occlusionTexture`; sampled AO is not 1.0 everywhere; the courtyard including the pane and area light stays; after stepping there is a contact involving a glTF body and the dump records a collider type; `increment19` writes scene + physics dump + our PNG (crevices / contact band darker than increment 18).
 
 Increment 20: the pane glTF has transmission and IOR (IOR is not 1.0; transmission > 0 and IOR > 1); the courtyard including the pane, area light, and AO pillar stays; after stepping there is a contact involving a glTF body and the dump records a collider type; `increment20` writes scene + physics dump + our PNG (bowl rim / ball bent through the pane).
+
+Increment 21: scene has ≥7 bodies; courtyard including pane + area light + AO pillar stays; crate (convex_hull) and bench (trimesh) are authored meshes that rest on the bowl; after stepping there is a contact involving a glTF body and the dump records its collider type; new bodies appear in the dump with collider kinds; `increment21` writes scene + physics dump + our PNG.

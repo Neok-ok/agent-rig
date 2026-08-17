@@ -1,4 +1,4 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–20).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–21).
 
 mod mesh;
 mod physics;
@@ -14,7 +14,7 @@ pub use mesh::{
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
     increment3_scene_json, increment4_scene, increment4_scene_json, increment5_scene,
-    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, increment16_scene, increment16_scene_json, increment17_scene, increment17_scene_json, increment18_scene, increment18_scene_json, increment19_scene, increment19_scene_json, increment20_scene, increment20_scene_json, parse_scene, Body, Camera,
+    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, increment16_scene, increment16_scene_json, increment17_scene, increment17_scene_json, increment18_scene, increment18_scene_json, increment19_scene, increment19_scene_json, increment20_scene, increment20_scene_json, increment21_scene, increment21_scene_json, parse_scene, Body, Camera,
     Light, Material, MeshCollider, Scene, Shape,
 };
 
@@ -45,6 +45,7 @@ pub const INCREMENT17_STEPS: u32 = 100;
 pub const INCREMENT18_STEPS: u32 = 100;
 pub const INCREMENT19_STEPS: u32 = 100;
 pub const INCREMENT20_STEPS: u32 = 100;
+pub const INCREMENT21_STEPS: u32 = 100;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -202,6 +203,11 @@ pub fn run_increment19(out_dir: &Path, steps: u32, dt: f32, width: u32, height: 
 /// Increment 20: increment-19 courtyard; pane transmits and the ray refracts (Snell, authored IOR).
 pub fn run_increment20(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
     write_step_render(out_dir, &increment20_scene(), steps, dt, width, height)
+}
+
+/// Increment 21: increment-20 courtyard plus two authored mesh bodies (crate + bench).
+pub fn run_increment21(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
+    write_step_render(out_dir, &increment21_scene(), steps, dt, width, height)
 }
 
 #[derive(Debug, Clone)]
