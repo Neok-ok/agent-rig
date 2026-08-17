@@ -1,6 +1,6 @@
-# agent-rig (increments 1–15)
+# agent-rig (increments 1–16)
 
-Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture and optional tangent-space normalTexture). Directional and point lights both cast shadow rays. No GPU. No Three.js in the engine.
+Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, and optional emissiveFactor × emissiveTexture). Directional and point lights both cast shadow rays. No GPU. No Three.js in the engine.
 
 ## Increment 1
 
@@ -514,6 +514,38 @@ cd /workspace/agent-rig && ./scripts/increment15-threejs.sh
 
 Writes `artifacts/increment15/threejs_00.png` … `threejs_07.png` (stock MeshStandardMaterial, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450). Loads the increment-15 scene JSON and applies each trajectory frame.
 
+
+## Increment 16
+
+Same courtyard as increment 14 (bowl + rock + metal ball + copper pillar with metallicRoughnessTexture + normalTexture, directional + shadowed point light). Single still — the increment-14 frozen pose, not another 8-frame sim. The pillar glTF now also has `emissiveFactor` and a high-contrast `emissiveTexture` (cyan glow bands / runes on black). Sampled emissive is `factor * textureRGB` and is added to outgoing radiance after lighting (self-illumination, not a new light). Scene-JSON has no emissive map.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment16.sh
+```
+
+Writes:
+
+- `artifacts/increment16/scene.json` — increment-14 courtyard (no emissive in JSON)
+- `artifacts/increment16/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment16/frame.png` — our renderer, 800x450, post-step pose
+- `artifacts/increment16/threejs-frame.png` — stock Three.js, same pose (emissive + emissiveMap from the glTF, no IBL/tonemap)
+
+### CLI
+
+```bash
+agent-rig increment16 --out artifacts/increment16
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment16-threejs.sh
+```
+
+Writes `artifacts/increment16/threejs-frame.png` (stock MeshStandardMaterial, same glTF emissive / emissiveMap + MR + normalMap, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450).
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
@@ -521,7 +553,7 @@ JSON object with `camera`, `lights`, and `bodies`.
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`
 - `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path)
-- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel. When `normalTexture` is present, RGB is unpacked to a tangent-space normal (2c−1) and TBN·n_ts replaces the geometric N for lighting (TANGENT accessor, or TBN derived from triangle positions + TEXCOORD_0). Scene JSON has no normal map.
+- mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel. When `normalTexture` is present, RGB is unpacked to a tangent-space normal (2c−1) and TBN·n_ts replaces the geometric N for lighting (TANGENT accessor, or TBN derived from triangle positions + TEXCOORD_0). Scene JSON has no normal map. When `emissiveFactor` and/or `emissiveTexture` are present, sampled emissive is `factor * textureRGB` (no texture → factor only) and is added to outgoing radiance after lighting. Scene JSON has no emissive map.
 
 Gravity is `[0, -9.81, 0]`.
 
@@ -560,3 +592,5 @@ Increment 13: the glTF has `pbrMetallicRoughness.metallicRoughnessTexture`; the 
 Increment 14: the glTF has `normalTexture`; the loaded mesh shades with sampled tangent-space normals (TBN from TANGENT or from triangle + UV), not the geometric N alone; after stepping there is a contact involving the glTF body and the dump records its collider type; `increment14` writes scene + physics dump + our PNG.
 
 Increment 15: same courtyard and lights; the ball has a non-zero initial linear velocity; physics is stepped across 8 frames from the increment-11 camera (no orbit); `frame_00` and `frame_07` are not copies; after the sim the dump still records the pillar collider and a contact involving it; `increment15` writes scene + physics dump + the 8 PNGs.
+
+Increment 16: the glTF has `emissiveTexture` (and `emissiveFactor`); the loaded mesh samples `factor * textureRGB` (non-zero, not the no-texture fallback); after stepping there is a contact involving the glTF body and the dump records its collider type; `increment16` writes scene + physics dump + our PNG.

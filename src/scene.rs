@@ -751,3 +751,11 @@ pub fn increment15_scene() -> Scene {
         .expect("increment15 scene JSON is valid")
         .with_default_mesh_search()
 }
+
+pub fn increment16_scene_json() -> &'static str {
+    INCREMENT11_SCENE_JSON
+}
+
+pub fn increment16_scene() -> Scene {
+    increment11_scene()
+}

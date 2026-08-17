@@ -221,6 +221,18 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
       }
     }
   }
+  let emissiveTextureUrl = null;
+  if (mat.emissiveTexture && gltf.textures && gltf.images) {
+    const tex = gltf.textures[mat.emissiveTexture.index];
+    if (tex && tex.source !== undefined) {
+      const img = gltf.images[tex.source];
+      if (img && img.uri) {
+        emissiveTextureUrl = img.uri.startsWith('data:')
+          ? img.uri
+          : new URL(img.uri, new URL(gltfUrl, location.href)).href;
+      }
+    }
+  }
   return {
     baseColorFactor: factor,
     metallicFactor: pbr.metallicFactor === undefined ? 1 : pbr.metallicFactor,
@@ -229,6 +241,8 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
     mrTextureUrl,
     normalTextureUrl,
     normalScale: mat.normalTexture && mat.normalTexture.scale !== undefined ? mat.normalTexture.scale : 1,
+    emissiveFactor: mat.emissiveFactor || [0, 0, 0],
+    emissiveTextureUrl,
   };
 }
 
@@ -380,6 +394,19 @@ for (const body of spec.bodies) {
     mat.normalMap = nrm;
     if (THREE.Vector2) {
       mat.normalScale = new THREE.Vector2(gltfPbr.normalScale, gltfPbr.normalScale);
+    }
+    mat.needsUpdate = true;
+  }
+  if (gltfPbr && (gltfPbr.emissiveFactor || gltfPbr.emissiveTextureUrl)) {
+    const ef = gltfPbr.emissiveFactor || [0, 0, 0];
+    mat.emissive = new THREE.Color(ef[0], ef[1], ef[2]);
+    if (gltfPbr.emissiveTextureUrl) {
+      const em = await loadTexture(gltfPbr.emissiveTextureUrl);
+      if ('SRGBColorSpace' in THREE) em.colorSpace = THREE.SRGBColorSpace;
+      em.wrapS = THREE.RepeatWrapping;
+      em.wrapT = THREE.RepeatWrapping;
+      em.needsUpdate = true;
+      mat.emissiveMap = em;
     }
     mat.needsUpdate = true;
   }

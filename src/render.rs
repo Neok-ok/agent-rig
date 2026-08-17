@@ -144,6 +144,8 @@ struct Prim {
     mr_map: Option<MrMap>,
     normal_map: Option<NormalMap>,
     normal_scale: f32,
+    emissive_factor: V3,
+    emissive_map: Option<AlbedoMap>,
 }
 
 struct AlbedoMap {
@@ -385,6 +387,7 @@ struct Hit {
     albedo: V3,
     roughness: f32,
     metallic: f32,
+    emissive: V3,
 }
 
 /// Order-2 SH of the procedural HDR environment (y-up).
@@ -401,6 +404,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         let mut mr_map = None;
         let mut normal_map = None;
         let mut normal_scale = 1.0f32;
+        let mut emissive_factor = V3::new(0.0, 0.0, 0.0);
+        let mut emissive_map = None;
         let mut albedo_map = b.material.albedo_map.as_ref().map(|p| {
             let resolved = scene
                 .resolve_texture(p)
@@ -453,6 +458,17 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
                             panic!("gltf normalTexture {tex_path:?}: {e}")
                         }));
                         normal_scale = gm.normal_scale;
+                    }
+                    emissive_factor = V3::from_arr(gm.emissive_factor);
+                    if let Some(bytes) = &gm.emissive_texture_bytes {
+                        emissive_map = Some(
+                            AlbedoMap::load_from_bytes(bytes)
+                                .unwrap_or_else(|e| panic!("gltf emissiveTexture: {e}")),
+                        );
+                    } else if let Some(tex_path) = &gm.emissive_texture_path {
+                        emissive_map = Some(AlbedoMap::load(tex_path).unwrap_or_else(|e| {
+                            panic!("gltf emissiveTexture {tex_path:?}: {e}")
+                        }));
                     }
                 }
                 let rot = Quat::from_wxyz(b.rotation_wxyz);
@@ -522,6 +538,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             mr_map,
             normal_map,
             normal_scale,
+            emissive_factor,
+            emissive_map,
         });
     }
 
@@ -846,6 +864,10 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         }
         _ => (prim.metallic, prim.roughness),
     };
+    let emissive = match (&prim.emissive_map, uv) {
+        (Some(map), Some([u, v])) => map.sample(u, v).hadamard(prim.emissive_factor),
+        _ => prim.emissive_factor,
+    };
     Hit {
         t,
         p: pnt,
@@ -853,6 +875,7 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         albedo,
         roughness,
         metallic,
+        emissive,
     }
 }
 
@@ -939,7 +962,8 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
             }
         }
     }
-    color
+    // Self-illumination: sampled emissive added after lighting, not a new light.
+    color.add(h.emissive)
 }
 
 fn cook_torrance(albedo: V3, roughness: f32, metallic: f32, n: V3, v: V3, l: V3, n_dot_l: f32, radiance: V3) -> V3 {

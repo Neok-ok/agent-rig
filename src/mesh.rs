@@ -22,6 +22,12 @@ pub struct GltfPbrMaterial {
     pub normal_texture_bytes: Option<Vec<u8>>,
     /// glTF normalTexture.scale (xy multiplier, default 1).
     pub normal_scale: f32,
+    /// glTF emissiveFactor (linear RGB, default [0,0,0]).
+    pub emissive_factor: [f32; 3],
+    /// Sidecar emissive map (sRGB RGB; multiplies the factor).
+    pub emissive_texture_path: Option<PathBuf>,
+    /// Embedded emissive map bytes.
+    pub emissive_texture_bytes: Option<Vec<u8>>,
 }
 
 impl GltfPbrMaterial {
@@ -44,6 +50,34 @@ impl GltfPbrMaterial {
 
     pub fn has_normal_texture(&self) -> bool {
         self.normal_texture_path.is_some() || self.normal_texture_bytes.is_some()
+    }
+
+    pub fn has_emissive_texture(&self) -> bool {
+        self.emissive_texture_path.is_some() || self.emissive_texture_bytes.is_some()
+    }
+
+    /// Sample emissive = factor * textureRGB (glTF). No texture → factor only (often [0,0,0]).
+    pub fn sample_emissive(&self, u: f32, v: f32) -> Result<[f32; 3], String> {
+        if !self.has_emissive_texture() {
+            return Ok(self.emissive_factor);
+        }
+        let img = if let Some(bytes) = &self.emissive_texture_bytes {
+            image::load_from_memory(bytes)
+                .map_err(|e| format!("load emissive bytes: {e}"))?
+                .to_rgb8()
+        } else if let Some(path) = &self.emissive_texture_path {
+            image::open(path)
+                .map_err(|e| format!("load emissive {path:?}: {e}"))?
+                .to_rgb8()
+        } else {
+            return Ok(self.emissive_factor);
+        };
+        let (r, g, b) = sample_linear_rgb(&img, u, v);
+        Ok([
+            r * self.emissive_factor[0],
+            g * self.emissive_factor[1],
+            b * self.emissive_factor[2],
+        ])
     }
 
     /// Sample tangent-space normal (OpenGL, +Z up). RGB unpacked as 2c-1, then normalized.
@@ -728,6 +762,9 @@ fn parse_primitive_material(
     let mut normal_texture_path = None;
     let mut normal_texture_bytes = None;
     let mut normal_scale = 1.0f32;
+    let mut emissive_factor = [0.0f32, 0.0, 0.0];
+    let mut emissive_texture_path = None;
+    let mut emissive_texture_bytes = None;
     if let Some(pbr) = pbr {
         if let Some(arr) = pbr.get("baseColorFactor").and_then(|v| v.as_array()) {
             for (i, v) in arr.iter().take(4).enumerate() {
@@ -774,6 +811,22 @@ fn parse_primitive_material(
             normal_scale = n as f32;
         }
     }
+    if let Some(arr) = mat.get("emissiveFactor").and_then(|v| v.as_array()) {
+        for (i, v) in arr.iter().take(3).enumerate() {
+            if let Some(n) = v.as_f64() {
+                emissive_factor[i] = n as f32;
+            }
+        }
+    }
+    if let Some(tex) = mat.get("emissiveTexture") {
+        let tex_i = tex
+            .get("index")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| "emissiveTexture missing index".to_string())? as usize;
+        let (path, bytes) = load_gltf_image(root, tex_i, base_dir, buffers)?;
+        emissive_texture_path = path;
+        emissive_texture_bytes = bytes;
+    }
     Ok(Some(GltfPbrMaterial {
         base_color_factor,
         metallic_factor,
@@ -785,6 +838,9 @@ fn parse_primitive_material(
         normal_texture_path,
         normal_texture_bytes,
         normal_scale,
+        emissive_factor,
+        emissive_texture_path,
+        emissive_texture_bytes,
     }))
 }
 
