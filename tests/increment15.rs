@@ -81,6 +81,7 @@ fn scene_is_increment14_courtyard_same_camera() {
                     "keep the increment-11 point light at [0.55, 0.82, 1.10], got {position:?}"
                 );
             }
+            Light::Area { .. } => {}
         }
     }
     assert!(has_dir && has_point, "keep directional + point light");

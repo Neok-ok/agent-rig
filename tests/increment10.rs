@@ -55,6 +55,7 @@ fn scene_has_point_and_directional_lights() {
                 );
                 assert!(*intensity > 1.0, "point light intensity {intensity}");
             }
+            Light::Area { .. } => {}
         }
     }
     assert!(has_dir, "increment 10 keeps the directional");
@@ -135,6 +136,7 @@ fn increment10_writes_scene_dump_and_png() {
                 assert!(*intensity > 0.0);
             }
             Light::Directional { .. } => has_dir = true,
+            Light::Area { .. } => {}
         }
     }
     assert!(has_point && has_dir, "written scene must keep both lights");

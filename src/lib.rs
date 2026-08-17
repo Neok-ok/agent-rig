@@ -1,4 +1,4 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–17).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–18).
 
 mod mesh;
 mod physics;
@@ -6,7 +6,7 @@ mod render;
 mod scene;
 
 pub use physics::{simulate_trajectory, step_physics, PhysicsBodyState, PhysicsContact, PhysicsDump, Trajectory, TrajectoryFrame};
-pub use render::{point_light_occluded, render_scene, render_scene_to_png, FRAME_HEIGHT, FRAME_WIDTH};
+pub use render::{area_light_visibility, point_light_occluded, render_scene, render_scene_to_png, FRAME_HEIGHT, FRAME_WIDTH};
 pub use mesh::{
     apply_tbn, load_gltf, load_mesh, load_obj, parse_obj, tbn_from_positions_uvs, GltfAlphaMode,
     GltfPbrMaterial, TriangleMesh,
@@ -14,7 +14,7 @@ pub use mesh::{
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
     increment3_scene_json, increment4_scene, increment4_scene_json, increment5_scene,
-    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, increment16_scene, increment16_scene_json, increment17_scene, increment17_scene_json, parse_scene, Body, Camera,
+    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, increment16_scene, increment16_scene_json, increment17_scene, increment17_scene_json, increment18_scene, increment18_scene_json, parse_scene, Body, Camera,
     Light, Material, MeshCollider, Scene, Shape,
 };
 
@@ -42,6 +42,7 @@ pub const INCREMENT15_FRAMES: u32 = 8;
 pub const INCREMENT15_STRIDE: u32 = 12;
 pub const INCREMENT16_STEPS: u32 = 100;
 pub const INCREMENT17_STEPS: u32 = 100;
+pub const INCREMENT18_STEPS: u32 = 100;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -184,6 +185,11 @@ pub fn run_increment16(out_dir: &Path, steps: u32, dt: f32, width: u32, height: 
 /// Increment 17: increment-16 courtyard plus a BLEND glass pane; ray continues and composites.
 pub fn run_increment17(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
     write_step_render(out_dir, &increment17_scene(), steps, dt, width, height)
+}
+
+/// Increment 18: increment-17 courtyard; warm lamp is a rectangular area light (soft penumbra).
+pub fn run_increment18(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
+    write_step_render(out_dir, &increment18_scene(), steps, dt, width, height)
 }
 
 #[derive(Debug, Clone)]

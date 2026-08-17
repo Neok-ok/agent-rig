@@ -1,6 +1,6 @@
-# agent-rig (increments 1–17)
+# agent-rig (increments 1–18)
 
-Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, and optional alphaMode BLEND/MASK with non-1 alpha). Directional and point lights both cast shadow rays. No GPU. No Three.js in the engine.
+Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, and optional alphaMode BLEND/MASK with non-1 alpha). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
 ## Increment 1
 
@@ -578,12 +578,44 @@ cd /workspace/agent-rig && ./scripts/increment17-threejs.sh
 
 Writes `artifacts/increment17/threejs-frame.png` (stock MeshStandardMaterial, pane `transparent` + opacity 0.32, same glTF emissive / MR / normalMap on the pillar, ambient 0.25 + directional + PointLight, both lights cast shadows, no env map, no tonemap, 800x450).
 
+
+## Increment 18
+
+Same courtyard as increment 17 (bowl + rock + metal ball + copper pillar with MR + normal + emissive, glass pane, directional). Single still. The warm lamp is a rectangular area light (`type: "area"`, position `[0.15, 1.45, 0.40]`, size `[1.2, 0.8]`, intensity `40`, normal facing down). The raytracer samples a 4×4 grid on that rectangle, traces a shadow ray per sample, and averages the unoccluded Cook-Torrance + 1/r² contribution. Larger authored size → softer penumbra (readable contact under the ball / pillar). No rewrite of IBL.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment18.sh
+```
+
+Writes:
+
+- `artifacts/increment18/scene.json` — increment-17 courtyard; point lamp replaced by the area light
+- `artifacts/increment18/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment18/frame.png` — our renderer, 800x450, post-step pose
+- `artifacts/increment18/threejs-frame.png` — stock Three.js, same pose (`RectAreaLight`, no IBL/tonemap; Three.js area lights do not cast a real penumbra)
+
+### CLI
+
+```bash
+agent-rig increment18 --out artifacts/increment18
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment18-threejs.sh
+```
+
+Writes `artifacts/increment18/threejs-frame.png` (stock MeshStandardMaterial, same glTF materials, ambient 0.25 + directional + RectAreaLight at the authored pose, no env map, no tonemap, 800x450).
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
 
 - `camera`: `position`, `look_at`, `fov_y_deg`
-- `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`
+- `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`; or `type: "area"` with `position`, `size` `[width, height]`, `color`, `intensity`, optional `normal` (default `[0,-1,0]`). Area softness comes from the authored `size`.
 - `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path)
 - mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel. When `normalTexture` is present, RGB is unpacked to a tangent-space normal (2c−1) and TBN·n_ts replaces the geometric N for lighting (TANGENT accessor, or TBN derived from triangle positions + TEXCOORD_0). Scene JSON has no normal map. When `emissiveFactor` and/or `emissiveTexture` are present, sampled emissive is `factor * textureRGB` (no texture → factor only) and is added to outgoing radiance after lighting. Scene JSON has no emissive map. When `alphaMode` is `BLEND`, the surface is shaded then the ray continues and the results are blended (`src * alpha + behind * (1-alpha)`); `MASK` discards below `alphaCutoff`. Alpha is `baseColorFactor[3]` times baseColorTexture A if present. No refraction.
 
@@ -628,3 +660,5 @@ Increment 15: same courtyard and lights; the ball has a non-zero initial linear 
 Increment 16: the glTF has `emissiveTexture` (and `emissiveFactor`); the loaded mesh samples `factor * textureRGB` (non-zero, not the no-texture fallback); after stepping there is a contact involving the glTF body and the dump records its collider type; `increment16` writes scene + physics dump + our PNG.
 
 Increment 17: a glTF has `alphaMode` BLEND (or MASK) and sampled alpha is not 1.0 everywhere; the courtyard (bowl + rock + ball + pillar + pane) stays; after stepping there is a contact involving a glTF body and the dump records a collider type; `increment17` writes scene + physics dump + our PNG.
+
+Increment 18: the scene has an area light (`position`, `size`, `color`, `intensity`); the courtyard including the pane stays; after stepping there is a contact involving a glTF body and the dump records a collider type; `increment18` writes scene + physics dump + our PNG (soft penumbra, not a hard point-light umbra).

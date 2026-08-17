@@ -674,6 +674,65 @@ pub fn point_light_occluded(
     shadow_occluded(orig, l, &prims, dist)
 }
 
+/// Orthonormal width/height axes for a rectangle with the given world normal.
+/// Width prefers +X when the panel faces down.
+fn area_axes(n: V3) -> (V3, V3) {
+    let n = n.norm();
+    let helper = if n.x.abs() < 0.9 {
+        V3::new(1.0, 0.0, 0.0)
+    } else {
+        V3::new(0.0, 1.0, 0.0)
+    };
+    let u = helper.sub(n.mul(helper.dot(n))).norm();
+    let v = n.cross(u).norm();
+    (u, v)
+}
+
+const AREA_SAMPLES_X: u32 = 4;
+const AREA_SAMPLES_Y: u32 = 4;
+
+fn area_sample_point(center: V3, u_axis: V3, v_axis: V3, size: [f32; 2], ix: u32, iy: u32) -> V3 {
+    let su = ((ix as f32 + 0.5) / AREA_SAMPLES_X as f32 - 0.5) * size[0];
+    let sv = ((iy as f32 + 0.5) / AREA_SAMPLES_Y as f32 - 0.5) * size[1];
+    center.add(u_axis.mul(su)).add(v_axis.mul(sv))
+}
+
+/// Fraction of area-light samples visible from `hit_point` (0 = umbra, 1 = fully lit).
+/// Softness is the authored rectangle `size`, sampled on a 4×4 grid.
+pub fn area_light_visibility(
+    scene: &Scene,
+    hit_point: [f32; 3],
+    hit_normal: [f32; 3],
+    light_pos: [f32; 3],
+    size: [f32; 2],
+    light_normal: [f32; 3],
+) -> f32 {
+    let prims = scene_prims(scene);
+    let p = V3::from_arr(hit_point);
+    let n = V3::from_arr(hit_normal).norm();
+    let center = V3::from_arr(light_pos);
+    let n_l = V3::from_arr(light_normal).norm();
+    let (u_axis, v_axis) = area_axes(n_l);
+    let orig = p.add(n.mul(EPS * 4.0));
+    let mut seen = 0u32;
+    let total = AREA_SAMPLES_X * AREA_SAMPLES_Y;
+    for iy in 0..AREA_SAMPLES_Y {
+        for ix in 0..AREA_SAMPLES_X {
+            let sample = area_sample_point(center, u_axis, v_axis, size, ix, iy);
+            let to_l = sample.sub(p);
+            let dist = to_l.len().max(1e-3);
+            let l = to_l.mul(1.0 / dist);
+            if n_l.dot(l.mul(-1.0)) <= 0.0 {
+                continue;
+            }
+            if !shadow_occluded(orig, l, &prims, dist) {
+                seen += 1;
+            }
+        }
+    }
+    seen as f32 / total as f32
+}
+
 pub fn render_scene(scene: &Scene, width: u32, height: u32) -> RgbImage {
     let prims = scene_prims(scene);
 
@@ -1101,6 +1160,45 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                 color = color.add(cook_torrance(
                     h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
                 ));
+            }
+            Light::Area {
+                position,
+                size,
+                color: lcol,
+                intensity,
+                normal: lnorm,
+            } => {
+                let center = V3::from_arr(*position);
+                let n_l = V3::from_arr(*lnorm).norm();
+                let (u_axis, v_axis) = area_axes(n_l);
+                let n_samples = (AREA_SAMPLES_X * AREA_SAMPLES_Y) as f32;
+                let mut acc = V3::new(0.0, 0.0, 0.0);
+                let shadow_orig = h.p.add(n.mul(EPS * 4.0));
+                for iy in 0..AREA_SAMPLES_Y {
+                    for ix in 0..AREA_SAMPLES_X {
+                        let sample = area_sample_point(center, u_axis, v_axis, *size, ix, iy);
+                        let to_l = sample.sub(h.p);
+                        let dist = to_l.len().max(1e-3);
+                        let l = to_l.mul(1.0 / dist);
+                        let n_dot_l = n.dot(l).max(0.0);
+                        if n_dot_l <= 0.0 {
+                            continue;
+                        }
+                        // One-sided panel: only the facing side contributes.
+                        if n_l.dot(l.mul(-1.0)) <= 0.0 {
+                            continue;
+                        }
+                        if shadow_occluded(shadow_orig, l, prims, dist) {
+                            continue;
+                        }
+                        let atten = 1.0 / (dist * dist);
+                        let radiance = V3::from_arr(*lcol).mul(*intensity * atten);
+                        acc = acc.add(cook_torrance(
+                            h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
+                        ));
+                    }
+                }
+                color = color.add(acc.mul(1.0 / n_samples));
             }
         }
     }
