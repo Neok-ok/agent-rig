@@ -1514,6 +1514,20 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
     })
 }
 
+/// Look up a catalog scene, step it, then stamp dump.scene with the
+/// catalog key when the authored scene has no id (courtyard).
+/// increment53() / run_increment53 still call step_physics and stay
+/// scene-key-free.
+pub fn step_catalog_scene(id: &str, steps: u32, dt: f32) -> Result<PhysicsDump, String> {
+    let scene = crate::scene::scene_by_id(id)
+        .ok_or_else(|| format!("unknown scene id: {id}"))?;
+    let mut dump = step_physics(&scene, steps, dt)?;
+    if dump.scene.is_empty() {
+        dump.scene = id.to_string();
+    }
+    Ok(dump)
+}
+
 /// Step physics and record a snapshot every `frame_stride` steps, including step 0.
 /// `frame_count` is the number of snapshots (and later, PNGs), not the physics step count.
 pub fn simulate_trajectory(

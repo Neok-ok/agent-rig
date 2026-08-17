@@ -1,4 +1,4 @@
-# agent-rig (increments 1–59)
+# agent-rig (increments 1–60)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1914,3 +1914,12 @@ agent-rig scenes --out artifacts/increment59/scenes.json
 ```
 
 `scenes.json` is `[{ "id": "courtyard" }, { "id": "lane" }]`.
+
+Increment 60: run a catalog scene by name. `agent-rig sim --scene courtyard` (or `increment60`) looks up `scene_by_id` / the catalog and writes the courtyard (increment53) into `artifacts/increment60`. After stepping, if `dump.scene` is empty, it is set to the catalog key so courtyard gets `dump.scene="courtyard"` even though `increment53_scene()` has no `Scene.id`. increment59 stays the lane (`dump.scene=lane`, npc, no bar). increment53 artifacts stay scene-key-free. `INCREMENT60_STEPS=120` is a max cap; courtyard `play_until` still stops ~31 (`picked_up` / token). Same courtyard still (yellow bar, token gone, walker follow-cam offset `[1.20, 0.90, 1.50]`). No third catalog entry.
+
+```bash
+agent-rig sim --scene courtyard --out artifacts/increment60
+agent-rig increment60 --out artifacts/increment60
+```
+
+Unknown id is a hard error.

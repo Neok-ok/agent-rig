@@ -5606,3 +5606,13 @@ pub fn scene_by_id(id: &str) -> Option<Scene> {
         _ => None,
     }
 }
+
+pub fn increment60_scene_json() -> &'static str {
+    increment53_scene_json()
+}
+
+/// Catalog courtyard. Does not clone increment59. Does not set Scene.id
+/// on increment53. The dump key is applied after step, not here.
+pub fn increment60_scene() -> Scene {
+    scene_by_id("courtyard").expect("courtyard is in the catalog")
+}
