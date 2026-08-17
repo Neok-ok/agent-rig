@@ -156,6 +156,9 @@ struct Prim {
     alpha_cutoff: f32,
     transmission: f32,
     ior: f32,
+    attenuation_color: V3,
+    attenuation_distance: f32,
+    thickness: f32,
     clearcoat: f32,
     clearcoat_roughness: f32,
     sheen: f32,
@@ -478,6 +481,9 @@ struct Hit {
     alpha_cutoff: f32,
     transmission: f32,
     ior: f32,
+    attenuation_color: V3,
+    attenuation_distance: f32,
+    thickness: f32,
     clearcoat: f32,
     clearcoat_roughness: f32,
     sheen: f32,
@@ -508,6 +514,9 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         let mut alpha_cutoff = 0.5f32;
         let mut transmission = 0.0f32;
         let mut ior = 1.5f32;
+        let mut attenuation_color = V3::new(1.0, 1.0, 1.0);
+        let mut attenuation_distance = f32::INFINITY;
+        let mut thickness = 0.0f32;
         let clearcoat = b.material.clearcoat.clamp(0.0, 1.0);
         let clearcoat_roughness = b.material.clearcoat_roughness;
         let sheen = b.material.sheen.clamp(0.0, 1.0);
@@ -538,6 +547,9 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
                     alpha_cutoff = gm.alpha_cutoff.clamp(0.0, 1.0);
                     transmission = gm.transmission.clamp(0.0, 1.0);
                     ior = gm.ior.max(1.0);
+                    attenuation_color = V3::from_arr(gm.attenuation_color);
+                    attenuation_distance = gm.attenuation_distance;
+                    thickness = gm.thickness.max(0.0);
                     if let Some(bytes) = &gm.base_color_texture_bytes {
                         let mut map = AlbedoMap::load_rgba_from_bytes(bytes)
                             .unwrap_or_else(|e| panic!("gltf baseColorTexture: {e}"));
@@ -671,6 +683,9 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             alpha_cutoff,
             transmission,
             ior,
+            attenuation_color,
+            attenuation_distance,
+            thickness,
             clearcoat,
             clearcoat_roughness,
             sheen,
@@ -867,11 +882,25 @@ fn trace_rec(
                     // transmission=1 → the continuation *is* the image. Alpha
                     // tints (glass color) instead of covering the kink twice.
                     let cover = h.alpha * (1.0 - h.transmission);
-                    let tint = V3::new(
-                        1.0 - h.alpha * (1.0 - h.albedo.x),
-                        1.0 - h.alpha * (1.0 - h.albedo.y),
-                        1.0 - h.alpha * (1.0 - h.albedo.z),
-                    );
+                    let volume = h.attenuation_distance.is_finite()
+                        && h.attenuation_distance > 1e-8;
+                    // Entering: incident points against the outward normal.
+                    let entering = dir.dot(h.n) <= 0.0;
+                    let tint = if volume {
+                        // Volume absorption replaces the surface albedo tint.
+                        // Apply Beer-Lambert once on the enter → exit segment.
+                        if entering {
+                            beer_lambert_through(&h, nudged, refr, prims)
+                        } else {
+                            V3::new(1.0, 1.0, 1.0)
+                        }
+                    } else {
+                        V3::new(
+                            1.0 - h.alpha * (1.0 - h.albedo.x),
+                            1.0 - h.alpha * (1.0 - h.albedo.y),
+                            1.0 - h.alpha * (1.0 - h.albedo.z),
+                        )
+                    };
                     return src.mul(cover).add(behind.hadamard(tint).mul(1.0 - cover));
                 }
                 let behind = trace_rec(orig, dir, prims, lights, env, h.t + EPS, depth - 1);
@@ -1155,12 +1184,48 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         alpha_cutoff: prim.alpha_cutoff,
         transmission: prim.transmission,
         ior: prim.ior,
+        attenuation_color: prim.attenuation_color,
+        attenuation_distance: prim.attenuation_distance,
+        thickness: prim.thickness,
         clearcoat: prim.clearcoat,
         clearcoat_roughness: prim.clearcoat_roughness,
         sheen: prim.sheen,
         sheen_roughness: prim.sheen_roughness,
         sheen_color: prim.sheen_color,
     }
+}
+
+/// Beer-Lambert transmittance for a path of `distance` through a volume:
+/// T = attenuationColor.pow(distance / attenuationDistance) per channel.
+fn beer_lambert(color: V3, att_dist: f32, distance: f32) -> V3 {
+    if !att_dist.is_finite() || att_dist <= 1e-8 || distance <= 0.0 {
+        return V3::new(1.0, 1.0, 1.0);
+    }
+    let t = distance / att_dist;
+    V3::new(
+        color.x.max(0.0).powf(t),
+        color.y.max(0.0).powf(t),
+        color.z.max(0.0).powf(t),
+    )
+}
+
+/// Path-length transmittance from an enter hit to the exit (or authored thickness).
+fn beer_lambert_through(enter: &Hit, orig: V3, dir: V3, prims: &[Prim]) -> V3 {
+    let distance = if let Some(exit) = closest_hit(orig, dir, prims, 0.0, f32::MAX) {
+        if exit.transmission > 1e-4 {
+            // Next hit is the far face of the volume: use the real path length.
+            exit.p.sub(enter.p).len()
+        } else if enter.thickness > 1e-6 {
+            enter.thickness
+        } else {
+            0.0
+        }
+    } else if enter.thickness > 1e-6 {
+        enter.thickness
+    } else {
+        0.0
+    };
+    beer_lambert(enter.attenuation_color, enter.attenuation_distance, distance)
 }
 
 /// Snell's law. `incident` points toward the surface; `n` is the geometric normal.

@@ -285,12 +285,21 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
   }
   let transmission = 0;
   let ior = mat.ior === undefined ? 1.5 : mat.ior;
+  let attenuationColor = [1, 1, 1];
+  let attenuationDistance = Infinity;
+  let thickness = 0;
   if (mat.extensions && mat.extensions.KHR_materials_transmission) {
     const tf = mat.extensions.KHR_materials_transmission.transmissionFactor;
     if (tf !== undefined) transmission = tf;
   }
   if (mat.extensions && mat.extensions.KHR_materials_ior && mat.extensions.KHR_materials_ior.ior !== undefined) {
     ior = mat.extensions.KHR_materials_ior.ior;
+  }
+  if (mat.extensions && mat.extensions.KHR_materials_volume) {
+    const vol = mat.extensions.KHR_materials_volume;
+    if (vol.attenuationColor) attenuationColor = vol.attenuationColor;
+    if (vol.attenuationDistance !== undefined) attenuationDistance = vol.attenuationDistance;
+    if (vol.thicknessFactor !== undefined) thickness = vol.thicknessFactor;
   }
   return {
     baseColorFactor: factor,
@@ -306,6 +315,9 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
     occlusionStrength,
     transmission,
     ior,
+    attenuationColor,
+    attenuationDistance,
+    thickness,
     alphaMode: mat.alphaMode || 'OPAQUE',
     opacity: factor.length > 3 ? factor[3] : 1,
     doubleSided: !!mat.doubleSided,
@@ -424,7 +436,8 @@ for (const body of spec.bodies) {
   const sheen = (body.material && body.material.sheen) || 0;
   const sheenRoughness = (body.material && body.material.sheen_roughness);
   const sheenColor = (body.material && body.material.sheen_color);
-  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0) || clearcoat > 0 || sheen > 0;
+  const hasVolume = !!(gltfPbr && gltfPbr.attenuationDistance !== undefined && Number.isFinite(gltfPbr.attenuationDistance));
+  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0) || clearcoat > 0 || sheen > 0 || hasVolume;
   const MatClass = usePhysical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
   const mat = new MatClass({
     color: new THREE.Color(albedo[0], albedo[1], albedo[2]),
@@ -443,13 +456,20 @@ for (const body of spec.bodies) {
   if (usePhysical && gltfPbr && gltfPbr.transmission > 0) {
     mat.transmission = gltfPbr.transmission;
     mat.ior = gltfPbr.ior;
-    geom.computeBoundingBox();
-    const bb = geom.boundingBox;
-    if (bb) {
-      const dx = bb.max.x - bb.min.x;
-      const dy = bb.max.y - bb.min.y;
-      const dz = bb.max.z - bb.min.z;
-      mat.thickness = Math.min(dx, dy, dz);
+    if (gltfPbr.attenuationDistance !== undefined && Number.isFinite(gltfPbr.attenuationDistance)) {
+      const ac = gltfPbr.attenuationColor || [1, 1, 1];
+      mat.attenuationColor = new THREE.Color(ac[0], ac[1], ac[2]);
+      mat.attenuationDistance = gltfPbr.attenuationDistance;
+      mat.thickness = gltfPbr.thickness !== undefined ? gltfPbr.thickness : 0;
+    } else {
+      geom.computeBoundingBox();
+      const bb = geom.boundingBox;
+      if (bb) {
+        const dx = bb.max.x - bb.min.x;
+        const dy = bb.max.y - bb.min.y;
+        const dz = bb.max.z - bb.min.z;
+        mat.thickness = Math.min(dx, dy, dz);
+      }
     }
   }
   const mapUrl = (gltfPbr && gltfPbr.textureUrl)

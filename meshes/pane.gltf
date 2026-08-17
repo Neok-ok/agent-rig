@@ -5,7 +5,8 @@
   },
   "extensionsUsed": [
     "KHR_materials_transmission",
-    "KHR_materials_ior"
+    "KHR_materials_ior",
+    "KHR_materials_volume"
   ],
   "scene": 0,
   "scenes": [
@@ -59,6 +60,11 @@
         },
         "KHR_materials_ior": {
           "ior": 1.5
+        },
+        "KHR_materials_volume": {
+          "thicknessFactor": 1.0,
+          "attenuationDistance": 0.45,
+          "attenuationColor": [0.20, 0.85, 0.28]
         }
       }
     }

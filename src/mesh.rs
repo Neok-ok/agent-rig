@@ -50,6 +50,12 @@ pub struct GltfPbrMaterial {
     pub transmission: f32,
     /// Index of refraction (materials.ior or KHR_materials_ior). Default 1.5.
     pub ior: f32,
+    /// KHR_materials_volume.attenuationColor (linear RGB). Default [1,1,1] (no tint).
+    pub attenuation_color: [f32; 3],
+    /// KHR_materials_volume.attenuationDistance. Default +inf (no absorption).
+    pub attenuation_distance: f32,
+    /// KHR_materials_volume.thicknessFactor. Default 0.
+    pub thickness: f32,
 }
 
 impl GltfPbrMaterial {
@@ -84,6 +90,11 @@ impl GltfPbrMaterial {
 
     pub fn has_transmission(&self) -> bool {
         self.transmission > 1e-4
+    }
+
+    /// Authored volume absorption (finite distance, not a hidden constant).
+    pub fn has_volume_attenuation(&self) -> bool {
+        self.attenuation_distance.is_finite() && self.attenuation_distance > 1e-8
     }
 
     pub fn alpha_factor(&self) -> f32 {
@@ -874,6 +885,9 @@ fn parse_primitive_material(
     let mut occlusion_strength = 1.0f32;
     let mut transmission = 0.0f32;
     let mut ior = 1.5f32;
+    let mut attenuation_color = [1.0f32, 1.0, 1.0];
+    let mut attenuation_distance = f32::INFINITY;
+    let mut thickness = 0.0f32;
     let alpha_mode = match mat
         .get("alphaMode")
         .and_then(|v| v.as_str())
@@ -975,6 +989,21 @@ fn parse_primitive_material(
                 ior = n as f32;
             }
         }
+        if let Some(vol) = ext.get("KHR_materials_volume") {
+            if let Some(arr) = vol.get("attenuationColor").and_then(|v| v.as_array()) {
+                for (i, v) in arr.iter().take(3).enumerate() {
+                    if let Some(n) = v.as_f64() {
+                        attenuation_color[i] = n as f32;
+                    }
+                }
+            }
+            if let Some(n) = vol.get("attenuationDistance").and_then(|v| v.as_f64()) {
+                attenuation_distance = n as f32;
+            }
+            if let Some(n) = vol.get("thicknessFactor").and_then(|v| v.as_f64()) {
+                thickness = n as f32;
+            }
+        }
     }
     Ok(Some(GltfPbrMaterial {
         base_color_factor,
@@ -997,6 +1026,9 @@ fn parse_primitive_material(
         occlusion_strength,
         transmission,
         ior,
+        attenuation_color,
+        attenuation_distance,
+        thickness,
     }))
 }
 
