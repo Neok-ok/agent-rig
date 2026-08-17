@@ -29,6 +29,18 @@ pub enum Joint {
         anchor: [f32; 3],
         axis: [f32; 3],
     },
+    /// Prismatic / slider. `axis` is world-space; `limits` are [min, max]
+    /// along that axis from the closed pose. Optional `anchor` is the
+    /// closed-pose world attachment (defaults to body_b origin).
+    #[serde(rename = "slider")]
+    Slider {
+        body_a: String,
+        body_b: String,
+        axis: [f32; 3],
+        limits: [f32; 2],
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        anchor: Option<[f32; 3]>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1703,6 +1715,136 @@ pub fn increment28_scene() -> Scene {
         anchor: [1.10, 1.08, 1.10],
         // World X: horizontal so gravity swings the lantern down (Y-up).
         axis: [1.0, 0.0, 0.0],
+    });
+    scene
+}
+
+pub const INCREMENT29_SCENE_JSON: &str = r#"{
+  "camera": { "position": [3.6, 2.35, 5.2], "look_at": [0.1, 0.38, 0.0], "fov_y_deg": 40 },
+  "lights": [
+    { "type": "directional", "direction": [-0.45, -1.0, -0.35], "color": [1.0, 0.97, 0.92], "intensity": 3.0 },
+    { "type": "area", "position": [0.15, 1.45, 0.40], "size": [1.2, 0.8], "color": [1.0, 0.75, 0.45], "intensity": 40.0, "normal": [0.0, -1.0, 0.0] }
+  ],
+  "bodies": [
+    {
+      "id": "ground",
+      "shape": { "type": "mesh", "path": "meshes/bowl.obj", "collider": "trimesh" },
+      "position": [0, 0, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "material": { "albedo": [0.48, 0.44, 0.38], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "rock",
+      "shape": { "type": "mesh", "path": "meshes/rock.obj", "collider": "convex_hull" },
+      "position": [0.40, 0.002, 0.08],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 12.0,
+      "material": { "albedo": [0.48, 0.52, 0.62], "roughness": 0.28, "metallic": 0.2, "albedo_map": "textures/rock.png" }
+    },
+    {
+      "id": "ball",
+      "shape": { "type": "sphere", "radius": 0.32 },
+      "position": [-1.10, 0.36, 0.10],
+      "mass": 1.0,
+      "material": { "albedo": [0.92, 0.78, 0.45], "roughness": 0.15, "metallic": 0.9, "clearcoat": 1.0, "clearcoat_roughness": 0.08, "anisotropy": 0.95, "anisotropy_rotation": 0.6, "iridescence": 1.0, "iridescence_ior": 1.3, "iridescence_thickness": 380 }
+    },
+    {
+      "id": "pillar",
+      "shape": { "type": "mesh", "path": "meshes/pillar.gltf", "collider": "convex_hull" },
+      "position": [1.10, 0.002, 0.70],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 16.0,
+      "material": { "albedo": [0.40, 0.40, 0.42], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "pane",
+      "shape": { "type": "mesh", "path": "meshes/pane.gltf", "collider": "trimesh" },
+      "position": [0.50, 0.08, 2.20],
+      "rotation_wxyz": [0.9914449, 0.0, -0.1305262, 0.0],
+      "mass": 0,
+      "material": { "albedo": [0.75, 0.90, 1.00], "roughness": 0.08, "metallic": 0.0, "dispersion": 0.18 }
+    },
+    {
+      "id": "crate",
+      "shape": { "type": "mesh", "path": "meshes/crate.obj", "collider": "convex_hull" },
+      "position": [-0.35, 0.002, 0.85],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 2.5,
+      "material": { "albedo": [0.62, 0.40, 0.22], "roughness": 0.78, "metallic": 0.0 }
+    },
+    {
+      "id": "bench",
+      "shape": { "type": "mesh", "path": "meshes/bench.obj", "collider": "trimesh" },
+      "position": [1.35, 0.002, -0.15],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 5.0,
+      "material": { "albedo": [0.32, 0.36, 0.40], "roughness": 0.72, "metallic": 0.0, "sheen": 1.0, "sheen_roughness": 0.4, "sheen_color": [0.75, 0.12, 0.28] }
+    },
+    {
+      "id": "lantern",
+      "shape": { "type": "sphere", "radius": 0.12 },
+      "position": [1.10, 1.22, 1.42],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.4,
+      "material": { "albedo": [0.78, 0.48, 0.16], "roughness": 0.28, "metallic": 0.85 }
+    },
+    {
+      "id": "drawer",
+      "shape": { "type": "box", "size": [0.22, 0.11, 0.16] },
+      "position": [-0.35, 0.10, 1.02],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.3,
+      "linear_velocity": [0.0, 0.0, 2.5],
+      "material": { "albedo": [0.50, 0.32, 0.16], "roughness": 0.72, "metallic": 0.0 }
+    }
+  ],
+  "joints": [
+    { "type": "hinge", "body_a": "pillar", "body_b": "lantern", "anchor": [1.10, 1.08, 1.10], "axis": [1.0, 0.0, 0.0] },
+    { "type": "slider", "body_a": "crate", "body_b": "drawer", "axis": [0.0, 0.0, 1.0], "limits": [0.0, 0.35], "anchor": [-0.35, 0.10, 1.02] }
+  ]
+}"#;
+
+pub fn increment29_scene_json() -> &'static str {
+    INCREMENT29_SCENE_JSON
+}
+
+/// Increment-28 courtyard plus one drawer on the crate, constrained by a
+/// Rapier prismatic / slider. Clones increment28_scene() so the courtyard
+/// (including lantern + hinge) cannot drift.
+pub fn increment29_scene() -> Scene {
+    let mut scene = increment28_scene();
+    scene.bodies.push(Body {
+        id: "drawer".into(),
+        shape: Shape::Box { size: [0.22, 0.11, 0.16] },
+        position: [-0.35, 0.10, 1.02],
+        rotation_wxyz: [1.0, 0.0, 0.0, 0.0],
+        mass: 0.3,
+        linear_velocity: [0.0, 0.0, 2.5],
+        material: Material {
+            albedo: [0.50, 0.32, 0.16],
+            roughness: 0.72,
+            metallic: 0.0,
+            albedo_map: None,
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.0,
+            sheen: 0.0,
+            sheen_roughness: 0.5,
+            sheen_color: [1.0, 1.0, 1.0],
+            anisotropy: 0.0,
+            anisotropy_rotation: 0.0,
+            iridescence: 0.0,
+            iridescence_ior: 1.3,
+            iridescence_thickness: 400.0,
+            dispersion: 0.0,
+        },
+    });
+    scene.joints.push(Joint::Slider {
+        body_a: "crate".into(),
+        body_b: "drawer".into(),
+        axis: [0.0, 0.0, 1.0],
+        limits: [0.0, 0.35],
+        anchor: Some([-0.35, 0.10, 1.02]),
     });
     scene
 }

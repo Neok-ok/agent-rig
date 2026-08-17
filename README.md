@@ -1,4 +1,4 @@
-# agent-rig (increments 1–27)
+# agent-rig (increments 1–29)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -922,6 +922,37 @@ cd /workspace/agent-rig && ./scripts/increment28-threejs.sh
 
 Writes `artifacts/increment28/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, no env map, no tonemap, 800x450). Joints are ignored by Three.js; the still uses our post-step dump poses.
 
+## Increment 29
+
+Same courtyard as increment 28 (bowl + rock + gold ball with clearcoat / anisotropy / iridescence, copper pillar with AO, glass pane with transmission + IOR + volume + dispersion, crate, sheen bench, hanging lantern + hinge, directional + area light). One drawer (box, mass 0.3) is attached to the existing crate by an authored Rapier slider (`type: slider`, world-space `axis` toward the camera, `limits` `[0, 0.35]`). The drawer starts seated against the crate +Z face and is given an initial +Z velocity so it slides open. After stepping, the drawer COM has translated along the axis — not flush/nested as the start pose. Dump records both the slider and the existing hinge. No new material features, no new lights, no IBL rewrite.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment29.sh
+```
+
+Writes:
+
+- `artifacts/increment29/scene.json` — increment-28 courtyard plus drawer + slider
+- `artifacts/increment29/physics.json` — post-step dump (poses, contacts, collider kinds, joints)
+- `artifacts/increment29/frame.png` — our renderer, 800x450, post-step open pose
+- `artifacts/increment29/threejs-frame.png` — stock Three.js, same pose (`MeshPhysicalMaterial`, no env map, no tonemap)
+
+### CLI
+
+```bash
+agent-rig increment29 --out artifacts/increment29
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment29-threejs.sh
+```
+
+Writes `artifacts/increment29/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, no env map, no tonemap, 800x450). Joints are ignored by Three.js; the still uses our post-step dump poses.
+
 ## Scene format
 
 JSON object with `camera`, `lights`, `bodies`, and optional `joints`.
@@ -929,7 +960,7 @@ JSON object with `camera`, `lights`, `bodies`, and optional `joints`.
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`; or `type: "area"` with `position`, `size` `[width, height]`, `color`, `intensity`, optional `normal` (default `[0,-1,0]`). Area softness comes from the authored `size`.
 - `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path, optional `clearcoat` + `clearcoat_roughness`, optional `sheen` + `sheen_roughness` + `sheen_color`, optional `anisotropy` + `anisotropy_rotation`, optional `iridescence` + `iridescence_ior` + `iridescence_thickness`, optional `dispersion`)
-- `joints` (optional, default empty): `{ "type": "hinge", "body_a", "body_b", "anchor": [x,y,z], "axis": [x,y,z] }`. `anchor` is world-space (converted to local on each body at spawn). `axis` is a world-space direction; use a horizontal axis so gravity hangs the child. Mapped to a Rapier revolute / impulse joint.
+- `joints` (optional, default empty): `{ "type": "hinge", "body_a", "body_b", "anchor": [x,y,z], "axis": [x,y,z] }` or `{ "type": "slider", "body_a", "body_b", "axis": [x,y,z], "limits": [min, max] }` (optional `anchor` is the closed-pose world attachment). `anchor` is world-space (converted to local on each body at spawn). `axis` is a world-space direction; hinge axes should be horizontal so gravity hangs the child. Mapped to a Rapier revolute or prismatic impulse joint.
 - mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel. When `normalTexture` is present, RGB is unpacked to a tangent-space normal (2c−1) and TBN·n_ts replaces the geometric N for lighting (TANGENT accessor, or TBN derived from triangle positions + TEXCOORD_0). Scene JSON has no normal map. When `emissiveFactor` and/or `emissiveTexture` are present, sampled emissive is `factor * textureRGB` (no texture → factor only) and is added to outgoing radiance after lighting. Scene JSON has no emissive map. When `alphaMode` is `BLEND`, the surface is shaded then the ray continues and the results are blended (`src * alpha + behind * (1-alpha)`); `MASK` discards below `alphaCutoff`. Alpha is `baseColorFactor[3]` times baseColorTexture A if present. When `KHR_materials_transmission.transmissionFactor` is > 0, the continuation uses Snell refraction with the authored IOR (`materials.ior` or `KHR_materials_ior`, glass ~1.5): `eta = 1/ior` entering, `ior` leaving. No hidden bend constant. When `KHR_materials_volume` is present, the enter→exit path through the volume applies Beer-Lambert: `T = attenuationColor.pow(distance / attenuationDistance)` per channel, multiplied onto the radiance behind the pane. `attenuationColor` and `attenuationDistance` are authored (not hidden constants); this is volume absorption, not a change to `baseColorFactor`. When `occlusionTexture` is present, the R channel is sampled as AO (0 = occluded, 1 = open) and multiplies IBL / ambient; directional and area direct lighting are not multiplied by AO. Scene JSON has no AO map. Optional `anisotropy` (0–1) and `anisotropy_rotation` (radians) on a body material stretch the specular into a brushed-metal GGX lobe; strength and direction are the authored values (default 0 = isotropic). Optional `iridescence` (0–1), `iridescence_ior` (default 1.3), and `iridescence_thickness` (nm, default 400) add a thin-film rainbow on the specular F0 / Fresnel; factor, IOR, and thickness are the authored values (default 0 = off). Optional `dispersion` (KHR_materials_dispersion, default 0) on a transmitting material splits refracted rays into R/G/B with Cauchy IOR `n(λ) = ior + dispersion * (1/λ² − 1/0.55²)`; strength is the authored value (0 = increment-26 single-ray refraction).
 
 Gravity is `[0, -9.81, 0]`.
@@ -995,3 +1026,5 @@ Increment 26: scene has iridescence + iridescence_ior + iridescence_thickness on
 Increment 27: pane glTF has `KHR_materials_dispersion` (authored `dispersion` > 0); courtyard including crate + sheen bench + volume pane + IOR + area light + AO pillar + clearcoat + anisotropy + iridescence stays; after stepping there is a contact involving a glTF body and the dump records its collider type (pillar `convex_hull` + ground–pillar); `increment27` writes scene + physics dump + our PNG.
 
 Increment 28: courtyard plus one hanging lantern (sphere) on the existing copper pillar via an authored Rapier hinge (`type: hinge`, world-space `anchor` + horizontal `axis`); after stepping the lantern hangs below the hinge (not a floating T-pose); dump records the joint (kind, bodies, axis/anchor) plus pillar `convex_hull` and ground–pillar contacts; courtyard (crate, sheen bench, volume+dispersion pane, area light, AO pillar, clearcoat+anisotropy+iridescence ball) stays; `increment28` writes scene + physics dump + our PNG.
+
+Increment 29: courtyard plus one drawer (box) on the existing crate via an authored Rapier slider (`type: slider`, world-space `axis` + `limits`); after stepping the drawer COM has translated along the axis (open, not flush); dump records the slider (kind, crate, drawer, axis, limits) and the existing hinge (pillar, lantern) plus pillar `convex_hull` and ground–pillar contacts; courtyard (lantern + hinge, crate, sheen bench, volume+dispersion pane, area light, AO pillar, clearcoat+anisotropy+iridescence ball) stays; `increment29` writes scene + physics dump + our PNG.

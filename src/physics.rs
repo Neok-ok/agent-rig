@@ -22,6 +22,8 @@ pub struct PhysicsJoint {
     pub body_b: String,
     pub anchor: [f32; 3],
     pub axis: [f32; 3],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<[f32; 2]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,6 +220,63 @@ impl PhysicsWorld {
                         body_b: body_b.clone(),
                         anchor: *anchor,
                         axis: *axis,
+                        limits: None,
+                    });
+                }
+                Joint::Slider {
+                    body_a,
+                    body_b,
+                    axis,
+                    limits,
+                    anchor,
+                } => {
+                    let ha = *self.body_handles.get(body_a).ok_or_else(|| {
+                        format!("slider body_a '{body_a}' not found")
+                    })?;
+                    let hb = *self.body_handles.get(body_b).ok_or_else(|| {
+                        format!("slider body_b '{body_b}' not found")
+                    })?;
+                    let rb_a = &self.rigid_body_set[ha];
+                    let rb_b = &self.rigid_body_set[hb];
+                    let world_anchor = match anchor {
+                        Some(a) => point![a[0], a[1], a[2]],
+                        None => {
+                            let t = rb_b.translation();
+                            point![t.x, t.y, t.z]
+                        }
+                    };
+                    let dump_anchor = [world_anchor.x, world_anchor.y, world_anchor.z];
+                    let local_a = rb_a.position().inverse() * world_anchor;
+                    let local_b = rb_b.position().inverse() * world_anchor;
+                    let world_axis = vector![axis[0], axis[1], axis[2]];
+                    let local_axis_a = rb_a.rotation().inverse() * world_axis;
+                    let local_axis_b = rb_b.rotation().inverse() * world_axis;
+                    let unit_a = UnitVector::try_new(local_axis_a, 1e-6).ok_or_else(|| {
+                        format!("slider axis too small: {axis:?}")
+                    })?;
+                    let unit_b = UnitVector::try_new(local_axis_b, 1e-6).ok_or_else(|| {
+                        format!("slider axis too small: {axis:?}")
+                    })?;
+                    let slider = PrismaticJointBuilder::new(unit_a)
+                        .local_axis1(unit_a)
+                        .local_axis2(unit_b)
+                        .local_anchor1(local_a)
+                        .local_anchor2(local_b)
+                        .limits(*limits)
+                        .contacts_enabled(false)
+                        .build();
+                    self.impulse_joint_set.insert(ha, hb, slider, true);
+                    if let Some(rb) = self.rigid_body_set.get_mut(hb) {
+                        rb.set_linear_damping(1.0);
+                        rb.set_angular_damping(3.0);
+                    }
+                    self.authored_joints.push(PhysicsJoint {
+                        kind: "slider".into(),
+                        body_a: body_a.clone(),
+                        body_b: body_b.clone(),
+                        anchor: dump_anchor,
+                        axis: *axis,
+                        limits: Some(*limits),
                     });
                 }
             }
