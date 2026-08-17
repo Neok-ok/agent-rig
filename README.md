@@ -1,4 +1,4 @@
-# agent-rig (increments 1–39)
+# agent-rig (increments 1–40)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1264,6 +1264,38 @@ cd /workspace/agent-rig && ./scripts/increment39-threejs.sh
 ```
 
 Writes `artifacts/increment39/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, lantern emissive, no env map, no tonemap, 800x450). Three.js ignores kinematic; bodies still use our post-step dump poses (slid platform, ball off its seat, seated lid, closed drawer).
+
+
+## Increment 40
+
+Same courtyard as increment 39 (bowl + rock + gold ball with clearcoat / anisotropy / iridescence, copper pillar with AO, glass pane with transmission + IOR + volume + dispersion, crate, sheen bench, hanging lantern + hinge motor 4/8, drawer + slider motor -2/6, charm + ball socket, drawer-open trigger, emissive lantern 16, directional + area light, `drawer_probe` raycast, `drawer_sweep` shapecast, crate lid + fixed joint, ball impulse `[1.8, 0.4, 0.5]`, kinematic `platform` sliding +X at `[0.45, 0, 0]`). The scene authors one dynamic `rider` (box size `[0.16, 0.16, 0.16]`, position `[-0.55, 0.15, -0.55]` seated on the platform top, mass `0.35`, clay/terracotta albedo `[0.72, 0.38, 0.22]`, roughness `0.7`, not kinematic). After 120 steps the rider has ridden with the platform (`|rider.x - authored_x| > 0.35`) and its COM stays on the slab (not on the ground). The dump records the rider pose (dynamic) AND the platform pose with `kinematic: true`. Three.js uses dump poses for both. No new lights. Camera stays increment-39. `increment39_scene()` stays rider-free.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment40.sh
+```
+
+Writes:
+
+- `artifacts/increment40/scene.json` — increment-39 courtyard plus the clay rider
+- `artifacts/increment40/physics.json` — post-step dump (poses, contacts, collider kinds, joints, overlaps, `ray_hits`, `sweep_hits`, authored `impulses`, platform `kinematic: true`, rider on the slab)
+- `artifacts/increment40/frame.png` — our renderer, 800x450, courtyard plus the rider on the sliding platform
+- `artifacts/increment40/threejs-frame.png` — stock Three.js, same pose (`MeshPhysicalMaterial`, no env map, no tonemap); rider + platform from dump poses
+
+### CLI
+
+```bash
+agent-rig increment40 --out artifacts/increment40
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment40-threejs.sh
+```
+
+Writes `artifacts/increment40/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, lantern emissive, no env map, no tonemap, 800x450). Three.js ignores kinematic; bodies still use our post-step dump poses (ridden rider, slid platform, ball off its seat, seated lid, closed drawer).
 
 ## Scene format
 
