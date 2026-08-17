@@ -5370,3 +5370,44 @@ pub fn increment54_scene() -> Scene {
         mesh_search_dirs: vec![],
     }
 }
+
+
+pub fn increment55_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        let mut v: serde_json::Value = serde_json::from_str(increment54_scene_json())
+            .expect("increment54 scene JSON is valid");
+        let triggers = v["triggers"].as_array_mut().expect("increment54 has triggers");
+        triggers.push(serde_json::json!({
+            "id": "exit",
+            "shape": { "type": "box", "size": [0.40, 0.40, 0.40] },
+            "position": [1.00, 0.20, 0.00]
+        }));
+        v["play_until"] = serde_json::json!({
+            "kind": "entered",
+            "body": "exit"
+        });
+        serde_json::to_string_pretty(&v).expect("serialize increment55 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-54 lane plus an exit pad. Clones increment54_scene()
+/// so lane bodies / token / follow-cam cannot drift. Adds ONLY
+/// trigger `exit` and play_until entered/exit.
+/// increment54_scene() stays pickup-stop (no exit).
+pub fn increment55_scene() -> Scene {
+    let mut scene = increment54_scene();
+    scene.triggers.push(Trigger {
+        id: "exit".into(),
+        shape: Shape::Box {
+            size: [0.40, 0.40, 0.40],
+        },
+        position: [1.00, 0.20, 0.00],
+    });
+    scene.play_until = Some(PlayUntil {
+        kind: "entered".into(),
+        body: "exit".into(),
+    });
+    scene
+}

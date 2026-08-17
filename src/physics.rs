@@ -1348,6 +1348,16 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
                     });
                     break;
                 }
+            } else if until.kind == "entered" {
+                let overlaps = world.snapshot_overlaps();
+                if overlaps.iter().any(|o| o.trigger == until.body && o.body == "walker") {
+                    stopped = Some(StoppedRecord {
+                        kind: until.kind.clone(),
+                        body: until.body.clone(),
+                        at_step: i,
+                    });
+                    break;
+                }
             }
         }
     }
