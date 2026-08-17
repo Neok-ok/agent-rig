@@ -1,4 +1,4 @@
-# agent-rig (increments 1–60)
+# agent-rig (increments 1–61)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1923,3 +1923,9 @@ agent-rig increment60 --out artifacts/increment60
 ```
 
 Unknown id is a hard error.
+
+Increment 61: authorable scene transition. increment61_scene clones increment59 and ONLY sets `transition: { to: "courtyard" }`. increment59 stays transition-free (no `transition` key). increment 18–60 scene JSON stay compact. When play_until sets `dump.stopped`, if the scene authors a transition, `dump.transition` stamps `{ to, at_step }` matching `stopped.at_step`. `increment61` runs the lane into `artifacts/increment61` (`scene.json`, `physics.json`, `frame.png`), then if `dump.transition.to` is set runs `sim --scene <to>` into the same dir as `next-physics.json` + `next-frame.png` (does not overwrite the lane stills). Lane dump: `scene=lane`, steps ~100, stopped entered/exit @99, transition to courtyard, npc + walker + token dropped, follow-cam on walker. Next dump: `scene=courtyard`, steps 30..=31, stopped picked_up/token, HAS bar, NO npc. Two stills: lane (coral walker, amber npc, token on the ground) and courtyard (yellow bar, token gone). Three.js both. No third catalog entry.
+
+```bash
+agent-rig increment61 --out artifacts/increment61
+```

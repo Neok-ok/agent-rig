@@ -72,6 +72,11 @@ pub struct PhysicsDump {
     /// increment 18–58 dumps stay without a `scene` key.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub scene: String,
+    /// Stamped when play_until sets dump.stopped and the scene authors
+    /// a transition. Omitted when none so increment 18–60 dumps stay
+    /// without a `transition` key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition: Option<TransitionRecord>,
 }
 
 
@@ -85,6 +90,12 @@ pub struct DumpCamera {
 pub struct StoppedRecord {
     pub kind: String,
     pub body: String,
+    pub at_step: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransitionRecord {
+    pub to: String,
     pub at_step: u32,
 }
 
@@ -1509,8 +1520,15 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         held: world.held.clone(),
         dropped: world.dropped.clone(),
         camera,
-        stopped,
+        stopped: stopped.clone(),
         scene: scene.id.clone(),
+        transition: match (&stopped, &scene.transition) {
+            (Some(s), Some(t)) => Some(TransitionRecord {
+                to: t.to.clone(),
+                at_step: s.at_step,
+            }),
+            _ => None,
+        },
     })
 }
 

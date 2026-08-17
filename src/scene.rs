@@ -63,6 +63,10 @@ pub struct Scene {
     /// Omitted when none so increment 18–52 JSON stay compact.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub play_until: Option<PlayUntil>,
+    /// When this scene stops, go there. Omitted when none so
+    /// increment 18–60 JSON stay compact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition: Option<Transition>,
     #[serde(skip, default)]
     pub mesh_search_dirs: Vec<PathBuf>,
 }
@@ -377,6 +381,12 @@ pub struct DropEvent {
 pub struct PlayUntil {
     pub kind: String,
     pub body: String,
+}
+
+/// Authorable "when this scene stops, go there."
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Transition {
+    pub to: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5414,6 +5424,7 @@ pub fn increment54_scene() -> Scene {
             kind: "picked_up".into(),
             body: "token".into(),
         }),
+        transition: None,
         mesh_search_dirs: vec![],
     }
 }
@@ -5615,4 +5626,24 @@ pub fn increment60_scene_json() -> &'static str {
 /// on increment53. The dump key is applied after step, not here.
 pub fn increment60_scene() -> Scene {
     scene_by_id("courtyard").expect("courtyard is in the catalog")
+}
+
+pub fn increment61_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        serde_json::to_string_pretty(&increment61_scene()).expect("serialize increment61 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-59 lane plus an authorable transition. Clones increment59_scene()
+/// so id / npc / hold / drop / play_until / follow-cam cannot drift.
+/// ONLY sets `transition: { to: "courtyard" }`.
+/// increment59_scene() stays transition-free.
+pub fn increment61_scene() -> Scene {
+    let mut scene = increment59_scene();
+    scene.transition = Some(Transition {
+        to: "courtyard".into(),
+    });
+    scene
 }
