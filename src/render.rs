@@ -156,6 +156,8 @@ struct Prim {
     alpha_cutoff: f32,
     transmission: f32,
     ior: f32,
+    clearcoat: f32,
+    clearcoat_roughness: f32,
 }
 
 struct AlbedoMap {
@@ -473,6 +475,8 @@ struct Hit {
     alpha_cutoff: f32,
     transmission: f32,
     ior: f32,
+    clearcoat: f32,
+    clearcoat_roughness: f32,
 }
 
 /// Order-2 SH of the procedural HDR environment (y-up).
@@ -498,6 +502,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         let mut alpha_cutoff = 0.5f32;
         let mut transmission = 0.0f32;
         let mut ior = 1.5f32;
+        let clearcoat = b.material.clearcoat.clamp(0.0, 1.0);
+        let clearcoat_roughness = b.material.clearcoat_roughness;
         let mut albedo_map = b.material.albedo_map.as_ref().map(|p| {
             let resolved = scene
                 .resolve_texture(p)
@@ -656,6 +662,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             alpha_cutoff,
             transmission,
             ior,
+            clearcoat,
+            clearcoat_roughness,
         });
     }
 
@@ -1135,6 +1143,8 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         alpha_cutoff: prim.alpha_cutoff,
         transmission: prim.transmission,
         ior: prim.ior,
+        clearcoat: prim.clearcoat,
+        clearcoat_roughness: prim.clearcoat_roughness,
     }
 }
 
@@ -1194,6 +1204,22 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
 
     let mut color = diffuse_ibl.add(specular_ibl);
 
+    // Extra dielectric clearcoat IBL (F0 ≈ 0.04). Softness is authored
+    // clearcoat_roughness, not a hidden constant. On top of base MR, not a tweak.
+    if h.clearcoat > 1e-4 {
+        let cc_w = h.clearcoat.clamp(0.0, 1.0);
+        let cc_rough = h.clearcoat_roughness.clamp(0.04, 1.0);
+        let cc_f0 = V3::new(0.04, 0.04, 0.04);
+        let cc_env = env_specular(r, n, cc_rough);
+        let cc_brdf = env_brdf(n_dot_v, cc_rough, cc_f0);
+        color = color.add(
+            cc_env
+                .hadamard(cc_brdf)
+                .mul(cc_w * spec_ao * 11.0)
+                .add(cc_env.mul(1.45 * spec_ao * cc_w)),
+        );
+    }
+
     for light in lights {
         match light {
             Light::Directional {
@@ -1216,6 +1242,17 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                 color = color.add(cook_torrance(
                     h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
                 ));
+                if h.clearcoat > 1e-4 {
+                    color = color.add(clearcoat_specular(
+                        h.clearcoat_roughness.clamp(0.04, 1.0),
+                        n,
+                        v,
+                        l,
+                        n_dot_l,
+                        radiance,
+                        h.clearcoat,
+                    ));
+                }
             }
             Light::Point {
                 position,
@@ -1239,6 +1276,17 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                 color = color.add(cook_torrance(
                     h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
                 ));
+                if h.clearcoat > 1e-4 {
+                    color = color.add(clearcoat_specular(
+                        h.clearcoat_roughness.clamp(0.04, 1.0),
+                        n,
+                        v,
+                        l,
+                        n_dot_l,
+                        radiance,
+                        h.clearcoat,
+                    ));
+                }
             }
             Light::Area {
                 position,
@@ -1275,6 +1323,17 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
                         acc = acc.add(cook_torrance(
                             h.albedo, h.roughness, h.metallic, n, v, l, n_dot_l, radiance,
                         ));
+                        if h.clearcoat > 1e-4 {
+                            acc = acc.add(clearcoat_specular(
+                                h.clearcoat_roughness.clamp(0.04, 1.0),
+                                n,
+                                v,
+                                l,
+                                n_dot_l,
+                                radiance,
+                                h.clearcoat,
+                            ));
+                        }
                     }
                 }
                 color = color.add(acc.mul(1.0 / n_samples));
@@ -1283,6 +1342,29 @@ fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -
     }
     // Self-illumination: sampled emissive added after lighting, not a new light.
     color.add(h.emissive)
+}
+
+/// Extra dielectric coat lobe (F0 ≈ 0.04). Weight is authored `clearcoat`.
+/// Roughness is authored `clearcoat_roughness` (clamped). Not a base-MR tweak.
+fn clearcoat_specular(
+    roughness: f32,
+    n: V3,
+    v: V3,
+    l: V3,
+    n_dot_l: f32,
+    radiance: V3,
+    weight: f32,
+) -> V3 {
+    let h = v.add(l).norm();
+    let n_dot_v = n.dot(v).max(1e-4);
+    let n_dot_h = n.dot(h).max(0.0);
+    let v_dot_h = v.dot(h).max(0.0);
+    let f0 = V3::new(0.04, 0.04, 0.04);
+    let f = fresnel_schlick(v_dot_h, f0);
+    let d = ggx_d(n_dot_h, roughness);
+    let g = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let spec = f.mul(d * g / (4.0 * n_dot_v * n_dot_l + 1e-4));
+    spec.hadamard(radiance).mul(n_dot_l * weight)
 }
 
 fn cook_torrance(albedo: V3, roughness: f32, metallic: f32, n: V3, v: V3, l: V3, n_dot_l: f32, radiance: V3) -> V3 {

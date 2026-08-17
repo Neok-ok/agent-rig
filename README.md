@@ -1,4 +1,4 @@
-# agent-rig (increments 1–21)
+# agent-rig (increments 1–22)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), and optional KHR_materials_transmission + IOR with Snell refraction). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -704,13 +704,44 @@ cd /workspace/agent-rig && ./scripts/increment21-threejs.sh
 
 Writes `artifacts/increment21/threejs-frame.png` (stock MeshStandardMaterial / MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, no env map, no tonemap, 800x450). Ours still wins on IBL + refraction.
 
+## Increment 22
+
+Same courtyard as increment 21 (bowl + rock + metal ball + copper pillar with MR + normal + emissive + AO, glass pane with transmission + IOR, crate, bench, directional + area light). Single still, same camera. The gold ball authors a dielectric clearcoat layer (`clearcoat` + `clearcoat_roughness`) on top of the existing metallic-roughness Cook-Torrance — a wet / car-paint sheen, not a tweak of the base metal. Softness is the authored `clearcoat_roughness`. No new lights, no new bodies, no IBL rewrite.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment22.sh
+```
+
+Writes:
+
+- `artifacts/increment22/scene.json` — increment-21 courtyard plus clearcoat on the gold ball (own scene JSON)
+- `artifacts/increment22/physics.json` — post-step dump (poses, velocities, contacts, collider kinds)
+- `artifacts/increment22/frame.png` — our renderer, 800x450, post-step pose
+- `artifacts/increment22/threejs-frame.png` — stock Three.js, same pose (`MeshPhysicalMaterial` clearcoat, no env map, no tonemap)
+
+### CLI
+
+```bash
+agent-rig increment22 --out artifacts/increment22
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment22-threejs.sh
+```
+
+Writes `artifacts/increment22/threejs-frame.png` (stock MeshPhysicalMaterial with `clearcoat` + `clearcoatRoughness` from scene JSON, ambient 0.25 + directional + RectAreaLight, no env map, no tonemap, 800x450). Ours still wins on IBL sheen.
+
 ## Scene format
 
 JSON object with `camera`, `lights`, and `bodies`.
 
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`; or `type: "area"` with `position`, `size` `[width, height]`, `color`, `intensity`, optional `normal` (default `[0,-1,0]`). Area softness comes from the authored `size`.
-- `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path)
+- `bodies`: `id`, `shape` (`box` + full `size` xyz, `sphere` + `radius`, or `mesh` + `path` + `collider`), `position`, optional `rotation_wxyz` (default `[1,0,0,0]`), `mass` (0 = static), optional `linear_velocity`, `material` (`albedo`, `roughness`, `metallic`, optional `albedo_map` PNG path, optional `clearcoat` + `clearcoat_roughness`)
 - mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel. When `normalTexture` is present, RGB is unpacked to a tangent-space normal (2c−1) and TBN·n_ts replaces the geometric N for lighting (TANGENT accessor, or TBN derived from triangle positions + TEXCOORD_0). Scene JSON has no normal map. When `emissiveFactor` and/or `emissiveTexture` are present, sampled emissive is `factor * textureRGB` (no texture → factor only) and is added to outgoing radiance after lighting. Scene JSON has no emissive map. When `alphaMode` is `BLEND`, the surface is shaded then the ray continues and the results are blended (`src * alpha + behind * (1-alpha)`); `MASK` discards below `alphaCutoff`. Alpha is `baseColorFactor[3]` times baseColorTexture A if present. When `KHR_materials_transmission.transmissionFactor` is > 0, the continuation uses Snell refraction with the authored IOR (`materials.ior` or `KHR_materials_ior`, glass ~1.5): `eta = 1/ior` entering, `ior` leaving. No hidden bend constant. When `occlusionTexture` is present, the R channel is sampled as AO (0 = occluded, 1 = open) and multiplies IBL / ambient; directional and area direct lighting are not multiplied by AO. Scene JSON has no AO map.
 
 Gravity is `[0, -9.81, 0]`.
@@ -762,3 +793,5 @@ Increment 19: the glTF has `occlusionTexture`; sampled AO is not 1.0 everywhere;
 Increment 20: the pane glTF has transmission and IOR (IOR is not 1.0; transmission > 0 and IOR > 1); the courtyard including the pane, area light, and AO pillar stays; after stepping there is a contact involving a glTF body and the dump records a collider type; `increment20` writes scene + physics dump + our PNG (bowl rim / ball bent through the pane).
 
 Increment 21: scene has ≥7 bodies; courtyard including pane + area light + AO pillar stays; crate (convex_hull) and bench (trimesh) are authored meshes that rest on the bowl; after stepping there is a contact involving a glTF body and the dump records its collider type; new bodies appear in the dump with collider kinds; `increment21` writes scene + physics dump + our PNG.
+
+Increment 22: scene has clearcoat + clearcoat_roughness on the gold ball; courtyard including crate + bench + pane + area light + AO pillar stays; after stepping there is a contact involving a glTF body and the dump records its collider type; `increment22` writes scene + physics dump + our PNG.

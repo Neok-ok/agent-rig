@@ -419,14 +419,20 @@ for (const body of spec.bodies) {
     continue;
   }
   const albedo = gltfPbr ? gltfPbr.baseColorFactor : body.material.albedo;
-  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0);
+  const clearcoat = (body.material && body.material.clearcoat) || 0;
+  const clearcoatRoughness = (body.material && body.material.clearcoat_roughness) || 0;
+  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0) || clearcoat > 0;
   const MatClass = usePhysical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
   const mat = new MatClass({
     color: new THREE.Color(albedo[0], albedo[1], albedo[2]),
     roughness: gltfPbr ? gltfPbr.roughnessFactor : body.material.roughness,
     metalness: gltfPbr ? gltfPbr.metallicFactor : body.material.metallic,
   });
-  if (usePhysical) {
+  if (clearcoat > 0) {
+    mat.clearcoat = clearcoat;
+    mat.clearcoatRoughness = clearcoatRoughness;
+  }
+  if (usePhysical && gltfPbr && gltfPbr.transmission > 0) {
     mat.transmission = gltfPbr.transmission;
     mat.ior = gltfPbr.ior;
     geom.computeBoundingBox();
