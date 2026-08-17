@@ -6,8 +6,9 @@ use agent_rig::{
     increment21_scene_json, increment22_scene, increment22_scene_json, increment23_scene,
     increment23_scene_json, increment24_scene, increment24_scene_json, increment25_scene,
     increment25_scene_json, increment26_scene, increment26_scene_json, increment27_scene,
-    increment27_scene_json, increment28_scene, increment28_scene_json, parse_scene,
-    run_increment28, step_physics, Joint, Light, Shape, DEFAULT_DT, INCREMENT28_STEPS,
+    increment27_scene_json, increment28_scene, increment28_scene_json, increment29_scene,
+    increment29_scene_json, increment30_scene, increment30_scene_json, parse_scene,
+    run_increment30, step_physics, Joint, Light, Shape, DEFAULT_DT, INCREMENT30_STEPS,
 };
 
 fn body_by_id<'a>(scene: &'a agent_rig::Scene, id: &str) -> &'a agent_rig::Body {
@@ -64,8 +65,42 @@ fn pane_ior_and_transmission(mat: &serde_json::Value) -> (f64, f64) {
     (ior, transmission)
 }
 
+fn hinge_motor(scene: &agent_rig::Scene) -> (f32, f32) {
+    for j in &scene.joints {
+        if let Joint::Hinge {
+            body_a,
+            body_b,
+            motor_target_velocity,
+            motor_max_force,
+            ..
+        } = j
+        {
+            if body_a == "pillar" && body_b == "lantern" {
+                return (*motor_target_velocity, *motor_max_force);
+            }
+        }
+    }
+    panic!("scene missing pillar–lantern hinge");
+}
+
+fn slider_of(scene: &agent_rig::Scene) -> (&str, &str, [f32; 3], [f32; 2]) {
+    for j in &scene.joints {
+        if let Joint::Slider {
+            body_a,
+            body_b,
+            axis,
+            limits,
+            ..
+        } = j
+        {
+            return (body_a, body_b, *axis, *limits);
+        }
+    }
+    panic!("scene missing slider joint");
+}
+
 #[test]
-fn increment28_does_not_mutate_prior_scene_json() {
+fn increment30_does_not_mutate_prior_scene_json() {
     let s18 = parse_scene(increment18_scene_json()).expect("inc18");
     let s20 = parse_scene(increment20_scene_json()).expect("inc20");
     let s21 = parse_scene(increment21_scene_json()).expect("inc21");
@@ -75,6 +110,8 @@ fn increment28_does_not_mutate_prior_scene_json() {
     let s25 = parse_scene(increment25_scene_json()).expect("inc25");
     let s26 = parse_scene(increment26_scene_json()).expect("inc26");
     let s27 = parse_scene(increment27_scene_json()).expect("inc27");
+    let s28 = parse_scene(increment28_scene_json()).expect("inc28");
+    let s29 = parse_scene(increment29_scene_json()).expect("inc29");
     assert_eq!(s18.bodies.len(), 5, "increment 18 scene JSON must stay 5 bodies");
     assert_eq!(s20.bodies.len(), 5, "increment 20 scene JSON must stay 5 bodies");
     assert_eq!(s21.bodies.len(), 7, "increment 21 scene JSON must stay 7 bodies");
@@ -84,6 +121,8 @@ fn increment28_does_not_mutate_prior_scene_json() {
     assert_eq!(s25.bodies.len(), 7, "increment 25 scene JSON must stay 7 bodies");
     assert_eq!(s26.bodies.len(), 7, "increment 26 scene JSON must stay 7 bodies");
     assert_eq!(s27.bodies.len(), 7, "increment 27 scene JSON must stay 7 bodies");
+    assert_eq!(s28.bodies.len(), 8, "increment 28 scene JSON must stay 8 bodies");
+    assert_eq!(s29.bodies.len(), 9, "increment 29 scene JSON must stay 9 bodies");
     for (name, json) in [
         ("18", increment18_scene_json()),
         ("20", increment20_scene_json()),
@@ -94,14 +133,16 @@ fn increment28_does_not_mutate_prior_scene_json() {
         ("25", increment25_scene_json()),
         ("26", increment26_scene_json()),
         ("27", increment27_scene_json()),
+        ("28", increment28_scene_json()),
+        ("29", increment29_scene_json()),
     ] {
         assert!(
-            !json.contains("lantern"),
-            "must not mutate increment {name} scene JSON with a lantern"
+            !json.contains("motor_target_velocity"),
+            "must not mutate increment {name} scene JSON with motor_target_velocity"
         );
         assert!(
-            !json.contains("\"joints\""),
-            "must not mutate increment {name} scene JSON with joints"
+            !json.contains("motor_max_force"),
+            "must not mutate increment {name} scene JSON with motor_max_force"
         );
     }
     for (name, scene) in [
@@ -120,17 +161,35 @@ fn increment28_does_not_mutate_prior_scene_json() {
             "increment {name} joints must stay empty, got {}",
             scene.joints.len()
         );
-        assert!(
-            scene.bodies.iter().all(|b| b.id != "lantern"),
-            "increment {name} must not have a lantern body"
-        );
     }
-    let live27 = increment27_scene();
-    assert!(live27.joints.is_empty(), "increment27_scene joints must stay empty");
-    assert!(
-        live27.bodies.iter().all(|b| b.id != "lantern"),
-        "increment27_scene must not grow a lantern"
-    );
+    match &s28.joints[0] {
+        Joint::Hinge {
+            motor_target_velocity,
+            motor_max_force,
+            ..
+        } => {
+            assert_eq!(
+                *motor_target_velocity, 0.0,
+                "increment28 hinge motor_target_velocity must stay 0"
+            );
+            assert_eq!(
+                *motor_max_force, 0.0,
+                "increment28 hinge motor_max_force must stay 0"
+            );
+        }
+        other => panic!("increment28 joint must stay a hinge, got {other:?}"),
+    }
+    let (v29, f29) = hinge_motor(&s29);
+    assert_eq!(v29, 0.0, "increment29 hinge motor_target_velocity must stay 0");
+    assert_eq!(f29, 0.0, "increment29 hinge motor_max_force must stay 0");
+    let live28 = increment28_scene();
+    let (v28, f28) = hinge_motor(&live28);
+    assert_eq!(v28, 0.0, "increment28_scene hinge motor must stay 0");
+    assert_eq!(f28, 0.0, "increment28_scene hinge motor_max_force must stay 0");
+    let live29 = increment29_scene();
+    let (v29l, f29l) = hinge_motor(&live29);
+    assert_eq!(v29l, 0.0, "increment29_scene hinge motor must stay 0");
+    assert_eq!(f29l, 0.0, "increment29_scene hinge motor_max_force must stay 0");
     let _ = increment20_scene();
     let _ = increment21_scene();
     let _ = increment22_scene();
@@ -138,69 +197,51 @@ fn increment28_does_not_mutate_prior_scene_json() {
     let _ = increment24_scene();
     let _ = increment25_scene();
     let _ = increment26_scene();
+    let _ = increment27_scene();
 }
 
 #[test]
-fn increment28_scene_has_lantern_and_hinge() {
-    let parsed = parse_scene(increment28_scene_json()).expect("increment28 JSON should parse");
-    let lantern = body_by_id(&parsed, "lantern");
-    match lantern.shape {
-        Shape::Sphere { radius } => {
-            assert!(
-                (0.10..=0.14).contains(&radius),
-                "lantern sphere radius should be ~0.10–0.14, got {radius}"
-            );
-        }
-        _ => panic!("lantern should be a sphere, got {:?}", lantern.shape),
-    }
-    assert!(lantern.mass > 0.0, "lantern must be dynamic, mass={}", lantern.mass);
-
-    assert_eq!(parsed.joints.len(), 1, "expect one authored hinge, got {}", parsed.joints.len());
-    match &parsed.joints[0] {
-        Joint::Hinge {
-            body_a,
-            body_b,
-            anchor,
-            axis,
-            ..
-        } => {
-            assert_eq!(body_a, "pillar");
-            assert_eq!(body_b, "lantern");
-            assert!(
-                anchor.iter().any(|c| c.abs() > 1e-4),
-                "hinge anchor must be present, got {anchor:?}"
-            );
-            let alen = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
-            assert!(alen > 0.5, "hinge axis must be present, got {axis:?}");
-            assert!(
-                axis[1].abs() < 0.5,
-                "hinge axis should be horizontal (not Y) so gravity hangs, got {axis:?}"
-            );
-        }
-        other => panic!("increment28 joint must stay a hinge, got {other:?}"),
-    }
-
-    let live = increment28_scene();
+fn increment30_scene_hinge_has_authored_motor() {
+    let parsed = parse_scene(increment30_scene_json()).expect("increment30 JSON should parse");
+    let (v, f) = hinge_motor(&parsed);
     assert!(
-        live.bodies.iter().any(|b| b.id == "lantern"),
-        "increment28_scene must include the lantern"
+        (v - 4.0).abs() < 1e-5,
+        "increment30 scene hinge motor_target_velocity should be ~4, got {v}"
     );
-    assert_eq!(live.joints.len(), 1);
-    match &live.joints[0] {
-        Joint::Hinge { body_a, body_b, .. } => {
-            assert_eq!(body_a, "pillar");
-            assert_eq!(body_b, "lantern");
-        }
-        other => panic!("increment28_scene joint must stay a hinge, got {other:?}"),
-    }
+    assert!(
+        (f - 8.0).abs() < 1e-5,
+        "increment30 scene hinge motor_max_force should be ~8, got {f}"
+    );
+    assert!(v.abs() > 1e-3 && f.abs() > 1e-3, "motor must be nonzero");
+
+    let live = increment30_scene();
+    let (lv, lf) = hinge_motor(&live);
+    assert!(
+        (lv - 4.0).abs() < 1e-5,
+        "increment30_scene hinge motor_target_velocity should be ~4, got {lv}"
+    );
+    assert!(
+        (lf - 8.0).abs() < 1e-5,
+        "increment30_scene hinge motor_max_force should be ~8, got {lf}"
+    );
+    assert_eq!(
+        live.bodies.len(),
+        increment29_scene().bodies.len(),
+        "must not add bodies"
+    );
+    assert_eq!(
+        live.joints.len(),
+        increment29_scene().joints.len(),
+        "must not add joints"
+    );
 }
 
 #[test]
-fn increment28_keeps_courtyard() {
-    let scene = increment28_scene();
+fn increment30_keeps_courtyard() {
+    let scene = increment30_scene();
     assert!(
-        scene.bodies.len() >= 8,
-        "scene must have courtyard + lantern, got {}",
+        scene.bodies.len() >= 9,
+        "scene must have courtyard + lantern + drawer, got {}",
         scene.bodies.len()
     );
 
@@ -243,10 +284,40 @@ fn increment28_keeps_courtyard() {
         &body_by_id(&scene, "bench").shape,
         Shape::Mesh { path, .. } if path.contains("bench")
     );
+    let has_lantern = body_by_id(&scene, "lantern").id == "lantern";
+    let has_drawer = body_by_id(&scene, "drawer").id == "drawer";
     assert!(
-        has_bowl && has_rock && has_ball && has_pillar && has_pane && has_crate && has_bench,
-        "keep the increment-27 courtyard including crate, bench, and pane"
+        has_bowl
+            && has_rock
+            && has_ball
+            && has_pillar
+            && has_pane
+            && has_crate
+            && has_bench
+            && has_lantern
+            && has_drawer,
+        "keep the increment-29 courtyard including drawer, lantern, crate, bench, pane"
     );
+
+    let hinges: Vec<_> = scene
+        .joints
+        .iter()
+        .filter(|j| matches!(j, Joint::Hinge { .. }))
+        .collect();
+    assert_eq!(hinges.len(), 1, "keep the lantern hinge, got {}", hinges.len());
+    match hinges[0] {
+        Joint::Hinge { body_a, body_b, .. } => {
+            assert_eq!(body_a, "pillar");
+            assert_eq!(body_b, "lantern");
+        }
+        _ => unreachable!(),
+    }
+    let (a, b, axis, limits) = slider_of(&scene);
+    assert_eq!(a, "crate");
+    assert_eq!(b, "drawer");
+    let alen = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+    assert!(alen > 0.5, "keep slider axis, got {axis:?}");
+    assert!(limits[1] > limits[0], "keep slider limits");
 
     let ball = body_by_id(&scene, "ball");
     assert!(
@@ -326,10 +397,7 @@ fn increment28_keeps_courtyard() {
     let (ior, transmission) = pane_ior_and_transmission(&pane_v["materials"][0]);
     assert!(transmission > 0.0, "keep pane transmission, got {transmission}");
     assert!(ior > 1.0, "keep pane IOR > 1, got {ior}");
-    assert!(
-        (ior - 1.5).abs() < 0.05,
-        "keep pane IOR ~1.5, got {ior}"
-    );
+    assert!((ior - 1.5).abs() < 0.05, "keep pane IOR ~1.5, got {ior}");
     let used = pane_v["extensionsUsed"]
         .as_array()
         .unwrap()
@@ -365,28 +433,54 @@ fn increment28_keeps_courtyard() {
 }
 
 #[test]
-fn increment28_lantern_hangs_and_dump_records_joint() {
-    let scene = increment28_scene();
-    let lantern0 = body_by_id(&scene, "lantern");
-    let start_y = lantern0.position[1];
-    let Joint::Hinge { anchor, .. } = &scene.joints[0] else {
-        panic!("increment28 joint 0 must stay a hinge");
-    };
-    let anchor_y = anchor[1];
-
-    let dump = step_physics(&scene, INCREMENT28_STEPS, DEFAULT_DT).expect("physics");
-    assert_eq!(dump.joints.len(), 1, "dump must record the hinge, got {}", dump.joints.len());
-    let j = &dump.joints[0];
-    assert_eq!(j.kind, "hinge");
-    assert_eq!(j.body_a, "pillar");
-    assert_eq!(j.body_b, "lantern");
+fn increment30_lantern_swung_and_dump_records_motor() {
+    let scene = increment30_scene();
+    let dump = step_physics(&scene, INCREMENT30_STEPS, DEFAULT_DT).expect("physics");
     assert!(
-        j.anchor.iter().any(|c| c.abs() > 1e-4),
-        "dump joint anchor must be present, got {:?}",
-        j.anchor
+        dump.joints.len() >= 2,
+        "dump must record hinge + slider, got {}",
+        dump.joints.len()
     );
-    let alen = (j.axis[0] * j.axis[0] + j.axis[1] * j.axis[1] + j.axis[2] * j.axis[2]).sqrt();
-    assert!(alen > 0.5, "dump joint axis must be present, got {:?}", j.axis);
+
+    let hinge = dump
+        .joints
+        .iter()
+        .find(|j| j.kind == "hinge")
+        .expect("dump missing hinge");
+    assert_eq!(hinge.body_a, "pillar");
+    assert_eq!(hinge.body_b, "lantern");
+    let mtv = hinge
+        .motor_target_velocity
+        .expect("dump hinge must record motor_target_velocity");
+    let mmf = hinge
+        .motor_max_force
+        .expect("dump hinge must record motor_max_force");
+    assert!(
+        (mtv - 4.0).abs() < 1e-5,
+        "dump hinge motor_target_velocity should be 4, got {mtv}"
+    );
+    assert!(
+        (mmf - 8.0).abs() < 1e-5,
+        "dump hinge motor_max_force should be 8, got {mmf}"
+    );
+
+    let slider = dump
+        .joints
+        .iter()
+        .find(|j| j.kind == "slider")
+        .expect("dump missing slider");
+    assert_eq!(slider.body_a, "crate");
+    assert_eq!(slider.body_b, "drawer");
+    let slen = (slider.axis[0] * slider.axis[0]
+        + slider.axis[1] * slider.axis[1]
+        + slider.axis[2] * slider.axis[2])
+        .sqrt();
+    assert!(slen > 0.5, "dump slider axis must be present, got {:?}", slider.axis);
+    let limits = slider.limits.expect("dump slider must record limits");
+    assert!(
+        limits[1] > limits[0],
+        "dump slider limits must be a range, got {limits:?}"
+    );
 
     let pillar = dump
         .bodies
@@ -410,45 +504,49 @@ fn increment28_lantern_hangs_and_dump_records_joint() {
         .iter()
         .find(|b| b.id == "lantern")
         .expect("dump missing lantern");
-    assert_eq!(lantern.collider, "ball", "lantern collider should be ball");
-    let com_y = lantern.position[1];
+    let com = lantern.position;
+    // Increment 29 hang reference: COM ~[1.10, 0.756, 0.961], ~0.32 below
+    // anchor [1.10, 1.08, 1.10], axis [1,0,0].
+    let hang = [1.10_f32, 0.756, 0.961];
+    let anchor = [1.10_f32, 1.08, 1.10];
+    let dz = (com[2] - hang[2]).abs();
+    let hung_gap = anchor[1] - com[1];
+    let horiz = ((com[0] - hang[0]) * (com[0] - hang[0])
+        + (com[2] - hang[2]) * (com[2] - hang[2]))
+        .sqrt();
     assert!(
-        com_y < start_y - 0.08,
-        "lantern COM should leave the authored T-pose start y={start_y}, got y={com_y}"
-    );
-    // Primary hang check: sphere COM must sit clearly below the world-space hinge.
-    assert!(
-        com_y < anchor_y - 0.15,
-        "lantern COM y={com_y} must hang clearly below hinge anchor y={anchor_y} (not a T-pose)"
+        dz > 0.15 || hung_gap < 0.15 || horiz > 0.15,
+        "lantern COM {com:?} must be off the increment-29 hang line ~{hang:?} \
+         (|z-0.961|={dz}, anchor_y-com_y={hung_gap}, horiz={horiz})"
     );
 }
 
 #[test]
-fn increment28_writes_scene_dump_and_png() {
-    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts/increment28.sh");
-    assert!(script.is_file(), "scripts/increment28.sh must exist");
-    let three = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts/increment28-threejs.sh");
-    assert!(three.is_file(), "scripts/increment28-threejs.sh must exist");
+fn increment30_writes_scene_dump_and_png() {
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts/increment30.sh");
+    assert!(script.is_file(), "scripts/increment30.sh must exist");
+    let three = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts/increment30-threejs.sh");
+    assert!(three.is_file(), "scripts/increment30-threejs.sh must exist");
 
-    let out = PathBuf::from("target/test-increment28-artifacts");
+    let out = PathBuf::from("target/test-increment30-artifacts");
     let _ = fs::remove_dir_all(&out);
-    let paths = run_increment28(&out, INCREMENT28_STEPS, DEFAULT_DT, 200, 112)
-        .expect("run_increment28");
+    let paths = run_increment30(&out, INCREMENT30_STEPS, DEFAULT_DT, 200, 112)
+        .expect("run_increment30");
     assert!(paths.scene.is_file(), "missing scene.json");
     assert!(paths.physics.is_file(), "missing physics.json");
     assert!(paths.frame.is_file(), "missing frame.png");
 
     let scene_txt = fs::read_to_string(&paths.scene).unwrap();
     let scene = parse_scene(&scene_txt).expect("written scene.json parses");
+    assert!(scene.bodies.iter().any(|b| b.id == "drawer"));
     assert!(scene.bodies.iter().any(|b| b.id == "lantern"));
-    assert_eq!(scene.joints.len(), 1);
-    match &scene.joints[0] {
-        Joint::Hinge { body_a, body_b, .. } => {
-            assert_eq!(body_a, "pillar");
-            assert_eq!(body_b, "lantern");
-        }
-        other => panic!("written increment28 scene joint must stay a hinge, got {other:?}"),
-    }
+    let (v, f) = hinge_motor(&scene);
+    assert!((v - 4.0).abs() < 1e-5, "written scene motor_target_velocity {v}");
+    assert!((f - 8.0).abs() < 1e-5, "written scene motor_max_force {f}");
+    let (a, b, _axis, limits) = slider_of(&scene);
+    assert_eq!(a, "crate");
+    assert_eq!(b, "drawer");
+    assert!(limits[1] > limits[0]);
     let pane = body_by_id(&scene, "pane");
     assert!(
         pane.material.dispersion > 0.05,
@@ -483,14 +581,32 @@ fn increment28_writes_scene_dump_and_png() {
 
     let phys_txt = fs::read_to_string(&paths.physics).unwrap();
     let v: serde_json::Value = serde_json::from_str(&phys_txt).unwrap();
-    assert!(v["bodies"].as_array().unwrap().len() >= 8);
+    assert!(v["bodies"].as_array().unwrap().len() >= 9);
     let joints = v["joints"].as_array().expect("dump must have joints array");
-    assert!(!joints.is_empty(), "dump joints must record the hinge");
-    assert_eq!(joints[0]["kind"], "hinge");
-    assert_eq!(joints[0]["body_a"], "pillar");
-    assert_eq!(joints[0]["body_b"], "lantern");
-    assert!(joints[0]["anchor"].is_array());
-    assert!(joints[0]["axis"].is_array());
+    let slider = joints
+        .iter()
+        .find(|j| j["kind"] == "slider")
+        .expect("dump joints must record the slider");
+    assert_eq!(slider["body_a"], "crate");
+    assert_eq!(slider["body_b"], "drawer");
+    assert!(slider["axis"].is_array());
+    assert!(slider["limits"].is_array());
+    let hinge = joints
+        .iter()
+        .find(|j| j["kind"] == "hinge")
+        .expect("dump joints must record the hinge");
+    assert_eq!(hinge["body_a"], "pillar");
+    assert_eq!(hinge["body_b"], "lantern");
+    assert!(
+        hinge.get("motor_target_velocity").is_some(),
+        "dump hinge must record motor_target_velocity"
+    );
+    assert!(
+        hinge.get("motor_max_force").is_some(),
+        "dump hinge must record motor_max_force"
+    );
+    assert!((hinge["motor_target_velocity"].as_f64().unwrap() - 4.0).abs() < 1e-5);
+    assert!((hinge["motor_max_force"].as_f64().unwrap() - 8.0).abs() < 1e-5);
     let pillar_state = v["bodies"]
         .as_array()
         .unwrap()

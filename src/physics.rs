@@ -24,6 +24,12 @@ pub struct PhysicsJoint {
     pub axis: [f32; 3],
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limits: Option<[f32; 2]>,
+    /// Authored hinge motor target (rad/s). Present on hinges even if 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motor_target_velocity: Option<f32>,
+    /// Authored hinge motor max force / factor. Present on hinges even if 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motor_max_force: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,6 +192,8 @@ impl PhysicsWorld {
                     body_b,
                     anchor,
                     axis,
+                    motor_target_velocity,
+                    motor_max_force,
                 } => {
                     let ha = *self.body_handles.get(body_a).ok_or_else(|| {
                         format!("hinge body_a '{body_a}' not found")
@@ -203,16 +211,39 @@ impl PhysicsWorld {
                     let unit = UnitVector::try_new(local_axis_a, 1e-6).ok_or_else(|| {
                         format!("hinge axis too small: {axis:?}")
                     })?;
-                    let hinge = RevoluteJointBuilder::new(unit)
+                    // Authored motor. Both 0 (increment 28/29) keeps the hang
+                    // damper-to-zero: motor_velocity(0, 8). Nonzero target
+                    // drives the lantern around the hinge axis with a
+                    // ForceBased motor so motor_max_force (~8) can beat gravity.
+                    let authored = *motor_target_velocity != 0.0 || *motor_max_force != 0.0;
+                    let target = *motor_target_velocity;
+                    let factor = if authored {
+                        if *motor_max_force == 0.0 { 8.0 } else { *motor_max_force }
+                    } else {
+                        8.0
+                    };
+                    let mut builder = RevoluteJointBuilder::new(unit)
                         .local_anchor1(local_a)
                         .local_anchor2(local_b)
                         .contacts_enabled(false)
-                        .motor_velocity(0.0, 8.0)
-                        .build();
+                        .motor_velocity(target, factor);
+                    if authored {
+                        builder = builder
+                            .motor_model(MotorModel::ForceBased)
+                            .motor_max_force(factor);
+                    }
+                    let hinge = builder.build();
                     self.impulse_joint_set.insert(ha, hb, hinge, true);
                     if let Some(rb) = self.rigid_body_set.get_mut(hb) {
-                        rb.set_angular_damping(3.0);
-                        rb.set_linear_damping(1.0);
+                        // Heavy damping is for the hang settle. A driven motor
+                        // only needs light damping so it can keep swinging.
+                        if authored {
+                            rb.set_angular_damping(0.4);
+                            rb.set_linear_damping(0.2);
+                        } else {
+                            rb.set_angular_damping(3.0);
+                            rb.set_linear_damping(1.0);
+                        }
                     }
                     self.authored_joints.push(PhysicsJoint {
                         kind: "hinge".into(),
@@ -221,6 +252,8 @@ impl PhysicsWorld {
                         anchor: *anchor,
                         axis: *axis,
                         limits: None,
+                        motor_target_velocity: Some(*motor_target_velocity),
+                        motor_max_force: Some(*motor_max_force),
                     });
                 }
                 Joint::Slider {
@@ -277,6 +310,8 @@ impl PhysicsWorld {
                         anchor: dump_anchor,
                         axis: *axis,
                         limits: Some(*limits),
+                        motor_target_velocity: None,
+                        motor_max_force: None,
                     });
                 }
             }
