@@ -68,6 +68,10 @@ pub struct PhysicsDump {
     pub camera: Option<DumpCamera>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopped: Option<StoppedRecord>,
+    /// Optional catalog id copied from scene.id. Omitted when empty so
+    /// increment 18–58 dumps stay without a `scene` key.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub scene: String,
 }
 
 
@@ -1506,6 +1510,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         dropped: world.dropped.clone(),
         camera,
         stopped,
+        scene: scene.id.clone(),
     })
 }
 

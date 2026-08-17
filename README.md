@@ -1,4 +1,4 @@
-# agent-rig (increments 1–58)
+# agent-rig (increments 1–59)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1905,3 +1905,12 @@ Increment 56: increment56_scene clones increment55 and ONLY sets the existing to
 
 Increment 57: increment57_scene clones increment56 and ONLY adds `drops` `{ body: token, trigger: exit, by: walker, drop_offset: [0.22, -0.06, 0.00] }`; increment56_scene stays hold-through-stop (token still on the walker, no `drops` key); increment 18-56 scene JSON unchanged (no `"drops"`); dump.steps 85..=115, dump.stopped entered/exit, token on the floor at walker + drop_offset (not hold_offset), dump.held token by walker ~66, dump.dropped token by walker at stopped.at_step, overlaps include exit/walker, follow-cam; `increment57` writes scene + physics dump + our PNG.
 Increment 58: increment58_scene clones increment57 and ONLY adds body `npc` (amber box [0.18, 0.36, 0.18] at [1.35, 0.20, 0.00], controller [-0.40, 0, 0], groups 2/1); increment57_scene stays npc-free; increment 18-57 scene JSON unchanged (no `"npc"`); dump.steps 85..=115, dump.stopped entered/exit, dump.bodies has npc + walker + token + ground + block, npc walks −x (x < 1.00, grounded), walker still x > 0.65 with token at drop_offset, picked_up + held token@66, dropped token@99, follow-cam still walker; `increment58` writes scene + physics dump + our PNG.
+
+Increment 59: named scene catalog. `Scene` gains optional `id` (empty / omitted so increment 18–58 JSON stay compact). increment59_scene clones increment58 and ONLY sets `id: "lane"`; increment58_scene stays id-free. Catalog maps `courtyard` → increment53_scene() and `lane` → increment59_scene() (stable order, no third entry; increment53 JSON is not rewritten with an id). Physics dump copies `scene` from `scene.id` when non-empty; increment58 dump still has no `scene` key. Same stone lane as 58 (npc, hold, drop, token, exit, play_until entered, follow-cam on walker). `increment59` writes scene + physics dump + our PNG + `scenes.json`. List / write the catalog:
+
+```bash
+agent-rig scenes
+agent-rig scenes --out artifacts/increment59/scenes.json
+```
+
+`scenes.json` is `[{ "id": "courtyard" }, { "id": "lane" }]`.

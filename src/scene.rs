@@ -7,6 +7,9 @@ use crate::mesh::{load_mesh, resolve_mesh_path, resolve_texture_path, TriangleMe
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scene {
     pub camera: Camera,
+    /// Optional catalog id. Empty / omitted so increment 18–58 JSON stay compact.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
     pub lights: Vec<Light>,
     pub bodies: Vec<Body>,
     /// Authorable joints. `anchor` is world-space; converted to local on each body
@@ -5323,6 +5326,7 @@ pub fn increment54_scene() -> Scene {
                 offset: [-1.00, 0.80, 1.60],
             }),
         },
+        id: String::new(),
         lights: vec![Light::Directional {
             direction: [-0.45, -1.0, -0.35],
             color: [1.0, 0.97, 0.92],
@@ -5559,4 +5563,46 @@ pub fn increment58_scene() -> Scene {
         }),
     ));
     scene
+}
+
+pub fn increment59_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        let mut v: serde_json::Value = serde_json::from_str(increment58_scene_json())
+            .expect("increment58 scene JSON is valid");
+        v["id"] = serde_json::json!("lane");
+        serde_json::to_string_pretty(&v).expect("serialize increment59 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-58 lane plus a catalog id. Clones increment58_scene()
+/// so npc / hold / drop / token / exit / play_until / follow-cam
+/// cannot drift. ONLY sets `id` to "lane".
+/// increment58_scene() stays id-free.
+pub fn increment59_scene() -> Scene {
+    let mut scene = increment58_scene();
+    scene.id = "lane".into();
+    scene
+}
+
+/// Named scenes an agent can list and run. Stable order: courtyard, lane.
+/// Catalog maps the name; increment53 JSON is not rewritten with an id.
+pub fn scene_catalog() -> Vec<(&'static str, Scene)> {
+    vec![
+        ("courtyard", increment53_scene()),
+        ("lane", increment59_scene()),
+    ]
+}
+
+pub fn catalog_ids() -> Vec<&'static str> {
+    vec!["courtyard", "lane"]
+}
+
+pub fn scene_by_id(id: &str) -> Option<Scene> {
+    match id {
+        "courtyard" => Some(increment53_scene()),
+        "lane" => Some(increment59_scene()),
+        _ => None,
+    }
 }
