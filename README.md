@@ -1,4 +1,4 @@
-# agent-rig (increments 1–37)
+# agent-rig (increments 1–38)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1203,9 +1203,40 @@ cd /workspace/agent-rig && ./scripts/increment37-threejs.sh
 
 Writes `artifacts/increment37/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, lantern emissive, no env map, no tonemap, 800x450). Three.js ignores joints; bodies still use our post-step dump poses (seated lid, closed drawer).
 
+## Increment 38
+
+Same courtyard as increment 37 (bowl + rock + gold ball with clearcoat / anisotropy / iridescence, copper pillar with AO, glass pane with transmission + IOR + volume + dispersion, crate, sheen bench, hanging lantern + hinge motor 4/8, drawer + slider motor -2/6, charm + ball socket, drawer-open trigger, emissive lantern 16, directional + area light, `drawer_probe` raycast, `drawer_sweep` shapecast, crate lid + fixed joint). The scene authors one impulse on the gold ball (`body: "ball"`, `linear: [1.8, 0.4, 0.5]`). Applied once at spawn via Rapier `apply_impulse` in world space at the center of mass (no `point`). After 120 steps the ball COM has rolled off its increment-37 seat at `x = -1.1` (`|ball.x + 1.1| > 0.25`). The dump records the authored impulse (not post-step velocity) AND still has lid + fixed + hinge / slider / ball + `ray_hits` drawer_probe + `sweep_hits` drawer_sweep. Three.js ignores impulses; the ball uses the dump pose. No new bodies, joints, or lights. `increment37_scene()` stays impulse-free.
+
+### One command
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment38.sh
+```
+
+Writes:
+
+- `artifacts/increment38/scene.json` — increment-37 courtyard plus the ball impulse
+- `artifacts/increment38/physics.json` — post-step dump (poses, contacts, collider kinds, joints, overlaps, `ray_hits`, `sweep_hits`, authored `impulses`)
+- `artifacts/increment38/frame.png` — our renderer, 800x450, courtyard plus the ball off its seat
+- `artifacts/increment38/threejs-frame.png` — stock Three.js, same pose (`MeshPhysicalMaterial`, no env map, no tonemap); ball from dump pose
+
+### CLI
+
+```bash
+agent-rig increment38 --out artifacts/increment38
+```
+
+### Three.js baseline (same post-step pose)
+
+```bash
+cd /workspace/agent-rig && ./scripts/increment38-threejs.sh
+```
+
+Writes `artifacts/increment38/threejs-frame.png` (stock MeshPhysicalMaterial, ambient 0.25 + directional + RectAreaLight, lantern emissive, no env map, no tonemap, 800x450). Three.js ignores impulses; bodies still use our post-step dump poses (ball off its seat, seated lid, closed drawer).
+
 ## Scene format
 
-JSON object with `camera`, `lights`, `bodies`, optional `joints`, optional `triggers`, optional `raycasts`, and optional `shapecasts`.
+JSON object with `camera`, `lights`, `bodies`, optional `joints`, optional `triggers`, optional `raycasts`, optional `shapecasts`, and optional `impulses`.
 
 - `camera`: `position`, `look_at`, `fov_y_deg`
 - `lights`: `type: "directional"` with `direction`, `color`, `intensity`; or `type: "point"` with `position`, `color`, `intensity`; or `type: "area"` with `position`, `size` `[width, height]`, `color`, `intensity`, optional `normal` (default `[0,-1,0]`). Area softness comes from the authored `size`.
@@ -1213,6 +1244,7 @@ JSON object with `camera`, `lights`, `bodies`, optional `joints`, optional `trig
 - `triggers` (optional, default empty): `{ "id", "shape": { "type": "box", "size": [x,y,z] }, "position": [x,y,z] }`. Mapped to a Rapier sensor cuboid (`sensor = true`) on a fixed body. Sensors report overlaps and do not generate contact forces or push bodies. After stepping, the dump records `overlaps: [{ "trigger", "body" }]`. Rendered as a translucent cyan box (BLEND, alpha ~0.18).
 - `raycasts` (optional, default empty): `{ "id", "origin", "direction", "max_toi" }`. After stepping, the dump records `ray_hits: [{ "ray", "body", "point", "normal", "toi" }]` (hits only; misses omitted). Sensors are skipped. Rendered as a thin magenta segment plus a hit marker.
 - `shapecasts` (optional, default empty): `{ "id", "origin", "direction", "shape": { "type": "box", "size": [x,y,z] }, "max_toi" }`. Swept as a Rapier cuboid (half-extents = size/2) with `cast_shape`. After stepping, the dump records `sweep_hits: [{ "sweep", "body", "point", "normal", "toi" }]` (hits only; misses omitted). Sensors are skipped so a trigger cannot steal the hit. Rendered as a translucent box at the hit pose (`origin + dir * toi`) plus a small hit marker; on a miss the box is drawn at `origin + dir * max_toi`.
+- `impulses` (optional, default empty): `{ "body", "linear": [x,y,z] }`. Applied once at spawn via Rapier `apply_impulse` in world space at the center of mass (no `point` this increment). Not applied every step. After stepping, the dump records the authored impulses (not post-step velocity). Three.js ignores impulses; bodies use dump poses.
 - `joints` (optional, default empty): `{ "type": "hinge", "body_a", "body_b", "anchor": [x,y,z], "axis": [x,y,z] }` with optional `motor_target_velocity` + `motor_max_force` (serde default 0; both 0 = hang damper), or `{ "type": "slider", "body_a", "body_b", "axis": [x,y,z], "limits": [min, max] }` with optional `anchor` (closed-pose world attachment) and optional `motor_target_velocity` + `motor_max_force` (serde default 0; both 0 = no motor, increment 29–33 open from authored velocity), or `{ "type": "ball", "body_a", "body_b", "anchor": [x,y,z] }`, or `{ "type": "fixed", "body_a", "body_b", "anchor": [x,y,z] }`. `anchor` is world-space (converted to local on each body at spawn). `axis` is a world-space direction; hinge axes should be horizontal so gravity hangs the child. Mapped to a Rapier revolute, prismatic, spherical, or fixed (weld) impulse joint. A nonzero hinge motor replaces the hang damper with `motor_velocity(target, max_force)`. A nonzero slider motor drives along the axis with `motor_velocity(target, max_force)` (ForceBased). A ball socket is free in 2 axes (not locked to a hinge swing plane). A fixed joint locks all relative degrees of freedom so the child stays seated on the parent.
 - mesh `path` (`.obj`, `.gltf`, or `.glb`) and `albedo_map` are relative to the repo root (or the scene file). `collider` is `convex_hull` or `trimesh`. If `albedo_map` is set, the sampled texel replaces albedo on that body. glTF load is POSITION + optional TEXCOORD_0 + indices, TRIANGLES only. If the primitive has `pbrMetallicRoughness` (`baseColorFactor` and/or `baseColorTexture`, plus optional metallic/roughness factors and optional `metallicRoughnessTexture`), that drives the look; scene JSON `material` is the fallback when the glTF has no material. When `metallicRoughnessTexture` is present, roughness is sampled from G and metallic from B (times the factors); scene-JSON metallic/roughness do not override the texel. When `normalTexture` is present, RGB is unpacked to a tangent-space normal (2c−1) and TBN·n_ts replaces the geometric N for lighting (TANGENT accessor, or TBN derived from triangle positions + TEXCOORD_0). Scene JSON has no normal map. When `emissiveFactor` and/or `emissiveTexture` are present, sampled emissive is `factor * textureRGB` (no texture → factor only) and is added to outgoing radiance after lighting. Scene JSON has no emissive map. Optional scene-JSON `emissive` + `emissive_intensity` (serde default 0 = off) add self-glow (`emissive × intensity`) and treat that body's post-step COM as a point / mesh light on other surfaces; intensity 0 keeps increment-16 texture emissive with no mesh light. This is not a new `lights[]` entry. When `alphaMode` is `BLEND`, the surface is shaded then the ray continues and the results are blended (`src * alpha + behind * (1-alpha)`); `MASK` discards below `alphaCutoff`. Alpha is `baseColorFactor[3]` times baseColorTexture A if present. When `KHR_materials_transmission.transmissionFactor` is > 0, the continuation uses Snell refraction with the authored IOR (`materials.ior` or `KHR_materials_ior`, glass ~1.5): `eta = 1/ior` entering, `ior` leaving. No hidden bend constant. When `KHR_materials_volume` is present, the enter→exit path through the volume applies Beer-Lambert: `T = attenuationColor.pow(distance / attenuationDistance)` per channel, multiplied onto the radiance behind the pane. `attenuationColor` and `attenuationDistance` are authored (not hidden constants); this is volume absorption, not a change to `baseColorFactor`. When `occlusionTexture` is present, the R channel is sampled as AO (0 = occluded, 1 = open) and multiplies IBL / ambient; directional and area direct lighting are not multiplied by AO. Scene JSON has no AO map. Optional `anisotropy` (0–1) and `anisotropy_rotation` (radians) on a body material stretch the specular into a brushed-metal GGX lobe; strength and direction are the authored values (default 0 = isotropic). Optional `iridescence` (0–1), `iridescence_ior` (default 1.3), and `iridescence_thickness` (nm, default 400) add a thin-film rainbow on the specular F0 / Fresnel; factor, IOR, and thickness are the authored values (default 0 = off). Optional `dispersion` (KHR_materials_dispersion, default 0) on a transmitting material splits refracted rays into R/G/B with Cauchy IOR `n(λ) = ior + dispersion * (1/λ² − 1/0.55²)`; strength is the authored value (0 = increment-26 single-ray refraction).
 
@@ -1297,3 +1329,7 @@ Increment 35: scene authors one ray `drawer_probe`; increment 34 stays raycast-f
 Increment 36: scene authors one shapecast `drawer_sweep`; increment 35 stays shapecast-free and keeps `drawer_probe`; increment 18-35 scene JSON unchanged; dump records a sweep hit on the drawer and still has `ray_hits` drawer_probe → drawer; courtyard + motors stay; `increment36` writes scene + physics dump + our PNG.
 
 Increment 37: scene authors one crate lid + a Rapier fixed / weld joint (`type: "fixed"`, crate–lid, world-space anchor); increment 36 stays lid-free and fixed-joint-free; increment 18-36 scene JSON unchanged (no `"fixed"`, no lid body); after stepping the lid y stays near authored `~0.28` (not on the ground); dump records `kind: "fixed"` crate/lid AND still has hinge/slider/ball + `ray_hits` drawer_probe + `sweep_hits` drawer_sweep; courtyard + motors stay; `increment37` writes scene + physics dump + our PNG.
+
+Increment 38: scene authors one impulse on the gold ball (`body: "ball"`, `linear: [1.8, 0.4, 0.5]`); increment 37 stays impulse-free; increment 18-37 scene JSON unchanged (no `"impulses"`); applied once at spawn (world-space, at COM); after 120 steps `|ball.x + 1.1| > 0.25` (rolls off the increment-37 seat); dump records the authored impulse (not post-step velocity) AND still has lid + fixed + hinge/slider/ball + `ray_hits` drawer_probe + `sweep_hits` drawer_sweep; courtyard + motors stay; `increment38` writes scene + physics dump + our PNG.
+
+Increment 38: scene authors one impulse on the gold ball (`linear: [1.8, 0.4, 0.5]`, applied once at spawn at COM); increment 37 stays impulse-free; increment 18-37 scene JSON unchanged (no `impulses` key); after stepping |ball.x + 1.1| > 0.25 (rolls off the seat); dump records the authored impulse; lid + fixed + drawer_probe + drawer_sweep + motors stay; `increment38` writes scene + physics dump + our PNG.

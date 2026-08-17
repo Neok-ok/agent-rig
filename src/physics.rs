@@ -3,7 +3,7 @@ use rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::scene::{Joint, MeshCollider, RayHit, Scene, Shape, SweepHit, Trigger};
+use crate::scene::{Impulse, Joint, MeshCollider, RayHit, Scene, Shape, SweepHit, Trigger};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhysicsDump {
@@ -23,6 +23,9 @@ pub struct PhysicsDump {
     /// Authored-shapecast hits after the last step. Misses are omitted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sweep_hits: Vec<SweepHit>,
+    /// Authored impulses echoed after the last step.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub impulses: Vec<Impulse>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,6 +203,21 @@ impl PhysicsWorld {
         }
         self.populate_joints(scene)?;
         self.populate_triggers(scene)?;
+        self.apply_authored_impulses(scene)?;
+        Ok(())
+    }
+
+    fn apply_authored_impulses(&mut self, scene: &Scene) -> Result<(), String> {
+        for impulse in &scene.impulses {
+            let handle = *self.body_handles.get(&impulse.body).ok_or_else(|| {
+                format!("impulse body '{}' not found", impulse.body)
+            })?;
+            let rb = self.rigid_body_set.get_mut(handle).ok_or_else(|| {
+                format!("impulse body '{}' missing rigid body", impulse.body)
+            })?;
+            let [lx, ly, lz] = impulse.linear;
+            rb.apply_impulse(vector![lx, ly, lz], true);
+        }
         Ok(())
     }
 
@@ -701,6 +719,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         overlaps: world.snapshot_overlaps(),
         ray_hits: world.snapshot_ray_hits(scene),
         sweep_hits: world.snapshot_sweep_hits(scene),
+        impulses: scene.impulses.clone(),
     })
 }
 
