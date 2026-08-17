@@ -283,6 +283,15 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
     }
     if (mat.occlusionTexture.strength !== undefined) occlusionStrength = mat.occlusionTexture.strength;
   }
+  let transmission = 0;
+  let ior = mat.ior === undefined ? 1.5 : mat.ior;
+  if (mat.extensions && mat.extensions.KHR_materials_transmission) {
+    const tf = mat.extensions.KHR_materials_transmission.transmissionFactor;
+    if (tf !== undefined) transmission = tf;
+  }
+  if (mat.extensions && mat.extensions.KHR_materials_ior && mat.extensions.KHR_materials_ior.ior !== undefined) {
+    ior = mat.extensions.KHR_materials_ior.ior;
+  }
   return {
     baseColorFactor: factor,
     metallicFactor: pbr.metallicFactor === undefined ? 1 : pbr.metallicFactor,
@@ -295,6 +304,8 @@ function pbrFromGltf(gltf, prim, gltfUrl) {
     emissiveTextureUrl,
     occlusionTextureUrl,
     occlusionStrength,
+    transmission,
+    ior,
     alphaMode: mat.alphaMode || 'OPAQUE',
     opacity: factor.length > 3 ? factor[3] : 1,
     doubleSided: !!mat.doubleSided,
@@ -408,11 +419,25 @@ for (const body of spec.bodies) {
     continue;
   }
   const albedo = gltfPbr ? gltfPbr.baseColorFactor : body.material.albedo;
-  const mat = new THREE.MeshStandardMaterial({
+  const usePhysical = !!(gltfPbr && gltfPbr.transmission > 0);
+  const MatClass = usePhysical ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+  const mat = new MatClass({
     color: new THREE.Color(albedo[0], albedo[1], albedo[2]),
     roughness: gltfPbr ? gltfPbr.roughnessFactor : body.material.roughness,
     metalness: gltfPbr ? gltfPbr.metallicFactor : body.material.metallic,
   });
+  if (usePhysical) {
+    mat.transmission = gltfPbr.transmission;
+    mat.ior = gltfPbr.ior;
+    geom.computeBoundingBox();
+    const bb = geom.boundingBox;
+    if (bb) {
+      const dx = bb.max.x - bb.min.x;
+      const dy = bb.max.y - bb.min.y;
+      const dz = bb.max.z - bb.min.z;
+      mat.thickness = Math.min(dx, dy, dz);
+    }
+  }
   const mapUrl = (gltfPbr && gltfPbr.textureUrl)
     ? gltfPbr.textureUrl
     : (body.material.albedo_map

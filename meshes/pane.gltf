@@ -1,8 +1,12 @@
 {
   "asset": {
     "version": "2.0",
-    "generator": "agent-rig increment17"
+    "generator": "agent-rig increment20"
   },
+  "extensionsUsed": [
+    "KHR_materials_transmission",
+    "KHR_materials_ior"
+  ],
   "scene": 0,
   "scenes": [
     {
@@ -38,6 +42,7 @@
       "name": "pane_glass",
       "alphaMode": "BLEND",
       "doubleSided": true,
+      "ior": 1.5,
       "pbrMetallicRoughness": {
         "baseColorFactor": [
           0.75,
@@ -47,6 +52,14 @@
         ],
         "metallicFactor": 0.0,
         "roughnessFactor": 0.08
+      },
+      "extensions": {
+        "KHR_materials_transmission": {
+          "transmissionFactor": 1.0
+        },
+        "KHR_materials_ior": {
+          "ior": 1.5
+        }
       }
     }
   ],
@@ -54,29 +67,29 @@
     {
       "bufferView": 0,
       "componentType": 5126,
-      "count": 4,
+      "count": 8,
       "type": "VEC3",
       "min": [
         -1.7,
         0.0,
-        0.0
+        -0.4789
       ],
       "max": [
         1.7,
         1.6,
-        0.0
+        0.24
       ]
     },
     {
       "bufferView": 1,
       "componentType": 5126,
-      "count": 4,
+      "count": 8,
       "type": "VEC2"
     },
     {
       "bufferView": 2,
       "componentType": 5123,
-      "count": 6,
+      "count": 36,
       "type": "SCALAR"
     }
   ],
@@ -84,26 +97,26 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 48,
+      "byteLength": 96,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 48,
-      "byteLength": 32,
+      "byteOffset": 96,
+      "byteLength": 64,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 80,
-      "byteLength": 12,
+      "byteOffset": 160,
+      "byteLength": 72,
       "target": 34963
     }
   ],
   "buffers": [
     {
       "uri": "pane.bin",
-      "byteLength": 92
+      "byteLength": 232
     }
   ]
 }

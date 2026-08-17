@@ -154,6 +154,8 @@ struct Prim {
     alpha: f32,
     alpha_mode: GltfAlphaMode,
     alpha_cutoff: f32,
+    transmission: f32,
+    ior: f32,
 }
 
 struct AlbedoMap {
@@ -469,6 +471,8 @@ struct Hit {
     alpha: f32,
     alpha_mode: GltfAlphaMode,
     alpha_cutoff: f32,
+    transmission: f32,
+    ior: f32,
 }
 
 /// Order-2 SH of the procedural HDR environment (y-up).
@@ -492,6 +496,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
         let mut alpha = 1.0f32;
         let mut alpha_mode = GltfAlphaMode::Opaque;
         let mut alpha_cutoff = 0.5f32;
+        let mut transmission = 0.0f32;
+        let mut ior = 1.5f32;
         let mut albedo_map = b.material.albedo_map.as_ref().map(|p| {
             let resolved = scene
                 .resolve_texture(p)
@@ -515,6 +521,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
                     alpha = gm.alpha_factor().clamp(0.0, 1.0);
                     alpha_mode = gm.alpha_mode;
                     alpha_cutoff = gm.alpha_cutoff.clamp(0.0, 1.0);
+                    transmission = gm.transmission.clamp(0.0, 1.0);
+                    ior = gm.ior.max(1.0);
                     if let Some(bytes) = &gm.base_color_texture_bytes {
                         let mut map = AlbedoMap::load_rgba_from_bytes(bytes)
                             .unwrap_or_else(|e| panic!("gltf baseColorTexture: {e}"));
@@ -646,6 +654,8 @@ fn scene_prims(scene: &Scene) -> Vec<Prim> {
             alpha,
             alpha_mode,
             alpha_cutoff,
+            transmission,
+            ior,
         });
     }
 
@@ -823,8 +833,27 @@ fn trace_rec(
                 };
             }
             let src = shade(&h, dir, prims, lights, env);
-            if h.alpha_mode == GltfAlphaMode::Blend && h.alpha < 0.999 && depth > 0 {
-                // Continue along the ray (offset by t) and composite.
+            let transmitting = h.transmission > 1e-4;
+            let blend = h.alpha_mode == GltfAlphaMode::Blend && h.alpha < 0.999;
+            if (transmitting || blend) && depth > 0 {
+                // Increment 17: continue and composite. Increment 20: Snell-refract
+                // using the authored IOR (eta = 1/ior entering, ior leaving).
+                if transmitting {
+                    let refr = snell_refract(dir, h.n, h.ior);
+                    // Leave the hit face along the refracted direction so we
+                    // traverse the slab (enter+exit) instead of re-hitting it.
+                    let nudged = h.p.add(refr.mul(EPS * 4.0));
+                    let behind = trace_rec(nudged, refr, prims, lights, env, 0.0, depth - 1);
+                    // transmission=1 → the continuation *is* the image. Alpha
+                    // tints (glass color) instead of covering the kink twice.
+                    let cover = h.alpha * (1.0 - h.transmission);
+                    let tint = V3::new(
+                        1.0 - h.alpha * (1.0 - h.albedo.x),
+                        1.0 - h.alpha * (1.0 - h.albedo.y),
+                        1.0 - h.alpha * (1.0 - h.albedo.z),
+                    );
+                    return src.mul(cover).add(behind.hadamard(tint).mul(1.0 - cover));
+                }
                 let behind = trace_rec(orig, dir, prims, lights, env, h.t + EPS, depth - 1);
                 return src.mul(h.alpha).add(behind.mul(1.0 - h.alpha));
             }
@@ -1104,7 +1133,27 @@ fn hit_uv(t: f32, pnt: V3, n: V3, prim: &Prim, uv: Option<[f32; 2]>) -> Hit {
         alpha,
         alpha_mode: prim.alpha_mode,
         alpha_cutoff: prim.alpha_cutoff,
+        transmission: prim.transmission,
+        ior: prim.ior,
     }
+}
+
+/// Snell's law. `incident` points toward the surface; `n` is the geometric normal.
+/// Entering (air → material): eta = 1/ior. Leaving: eta = ior. TIR reflects.
+fn snell_refract(incident: V3, n: V3, ior: f32) -> V3 {
+    let ior = ior.max(1e-4);
+    let mut nl = n;
+    let mut eta = 1.0 / ior;
+    if incident.dot(n) > 0.0 {
+        nl = n.mul(-1.0);
+        eta = ior;
+    }
+    let cosi = (-incident.dot(nl)).clamp(0.0, 1.0);
+    let k = 1.0 - eta * eta * (1.0 - cosi * cosi);
+    if k < 0.0 {
+        return incident.sub(nl.mul(2.0 * incident.dot(nl))).norm();
+    }
+    incident.mul(eta).add(nl.mul(eta * cosi - k.sqrt())).norm()
 }
 
 fn shade(h: &Hit, view_dir: V3, prims: &[Prim], lights: &[Light], env: &EnvSh) -> V3 {

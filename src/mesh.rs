@@ -46,6 +46,10 @@ pub struct GltfPbrMaterial {
     pub occlusion_texture_bytes: Option<Vec<u8>>,
     /// glTF occlusionTexture.strength (default 1).
     pub occlusion_strength: f32,
+    /// KHR_materials_transmission.transmissionFactor (0 = opaque, 1 = fully transmitting).
+    pub transmission: f32,
+    /// Index of refraction (materials.ior or KHR_materials_ior). Default 1.5.
+    pub ior: f32,
 }
 
 impl GltfPbrMaterial {
@@ -76,6 +80,10 @@ impl GltfPbrMaterial {
 
     pub fn has_occlusion_texture(&self) -> bool {
         self.occlusion_texture_path.is_some() || self.occlusion_texture_bytes.is_some()
+    }
+
+    pub fn has_transmission(&self) -> bool {
+        self.transmission > 1e-4
     }
 
     pub fn alpha_factor(&self) -> f32 {
@@ -864,6 +872,8 @@ fn parse_primitive_material(
     let mut occlusion_texture_path = None;
     let mut occlusion_texture_bytes = None;
     let mut occlusion_strength = 1.0f32;
+    let mut transmission = 0.0f32;
+    let mut ior = 1.5f32;
     let alpha_mode = match mat
         .get("alphaMode")
         .and_then(|v| v.as_str())
@@ -951,6 +961,21 @@ fn parse_primitive_material(
             occlusion_strength = n as f32;
         }
     }
+    if let Some(n) = mat.get("ior").and_then(|v| v.as_f64()) {
+        ior = n as f32;
+    }
+    if let Some(ext) = mat.get("extensions") {
+        if let Some(tr) = ext.get("KHR_materials_transmission") {
+            if let Some(n) = tr.get("transmissionFactor").and_then(|v| v.as_f64()) {
+                transmission = n as f32;
+            }
+        }
+        if let Some(ie) = ext.get("KHR_materials_ior") {
+            if let Some(n) = ie.get("ior").and_then(|v| v.as_f64()) {
+                ior = n as f32;
+            }
+        }
+    }
     Ok(Some(GltfPbrMaterial {
         base_color_factor,
         metallic_factor,
@@ -970,6 +995,8 @@ fn parse_primitive_material(
         occlusion_texture_path,
         occlusion_texture_bytes,
         occlusion_strength,
+        transmission,
+        ior,
     }))
 }
 
