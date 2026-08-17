@@ -98,6 +98,9 @@ pub enum Joint {
         body_b: String,
         anchor: [f32; 3],
         rest_length: f32,
+        /// Impulse magnitude that snaps the rope. 0 = never break.
+        #[serde(default, skip_serializing_if = "is_zero_f32")]
+        break_force: f32,
     },
 }
 
@@ -3928,6 +3931,198 @@ pub fn increment42_scene() -> Scene {
         // from the moving top.
         anchor: [0.35, 0.76, 1.75],
         rest_length: 0.38,
+        break_force: 0.0,
+    });
+    scene
+}
+
+pub const INCREMENT43_SCENE_JSON: &str = r#"
+{
+  "camera": { "position": [3.6, 2.35, 5.2], "look_at": [0.1, 0.38, 0.0], "fov_y_deg": 40 },
+  "lights": [
+    { "type": "directional", "direction": [-0.45, -1.0, -0.35], "color": [1.0, 0.97, 0.92], "intensity": 3.0 },
+    { "type": "area", "position": [0.15, 1.45, 0.40], "size": [1.2, 0.8], "color": [1.0, 0.75, 0.45], "intensity": 40.0, "normal": [0.0, -1.0, 0.0] }
+  ],
+  "bodies": [
+    {
+      "id": "ground",
+      "shape": { "type": "mesh", "path": "meshes/bowl.obj", "collider": "trimesh" },
+      "position": [0, 0, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "material": { "albedo": [0.48, 0.44, 0.38], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "rock",
+      "shape": { "type": "mesh", "path": "meshes/rock.obj", "collider": "convex_hull" },
+      "position": [0.40, 0.002, 0.08],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 12.0,
+      "material": { "albedo": [0.48, 0.52, 0.62], "roughness": 0.28, "metallic": 0.2, "albedo_map": "textures/rock.png" }
+    },
+    {
+      "id": "ball",
+      "shape": { "type": "sphere", "radius": 0.32 },
+      "position": [-1.10, 0.36, 0.10],
+      "mass": 1.0,
+      "material": { "albedo": [0.92, 0.78, 0.45], "roughness": 0.15, "metallic": 0.9, "clearcoat": 1.0, "clearcoat_roughness": 0.08, "anisotropy": 0.95, "anisotropy_rotation": 0.6, "iridescence": 1.0, "iridescence_ior": 1.3, "iridescence_thickness": 380 }
+    },
+    {
+      "id": "pillar",
+      "shape": { "type": "mesh", "path": "meshes/pillar.gltf", "collider": "convex_hull" },
+      "position": [1.10, 0.002, 0.70],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 16.0,
+      "material": { "albedo": [0.40, 0.40, 0.42], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "pane",
+      "shape": { "type": "mesh", "path": "meshes/pane.gltf", "collider": "trimesh" },
+      "position": [0.50, 0.08, 2.20],
+      "rotation_wxyz": [0.9914449, 0.0, -0.1305262, 0.0],
+      "mass": 0,
+      "material": { "albedo": [0.75, 0.90, 1.00], "roughness": 0.08, "metallic": 0.0, "dispersion": 0.18 }
+    },
+    {
+      "id": "crate",
+      "shape": { "type": "mesh", "path": "meshes/crate.obj", "collider": "convex_hull" },
+      "position": [-0.35, 0.002, 0.85],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 2.5,
+      "material": { "albedo": [0.62, 0.40, 0.22], "roughness": 0.78, "metallic": 0.0 }
+    },
+    {
+      "id": "bench",
+      "shape": { "type": "mesh", "path": "meshes/bench.obj", "collider": "trimesh" },
+      "position": [1.35, 0.002, -0.15],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 5.0,
+      "material": { "albedo": [0.32, 0.36, 0.40], "roughness": 0.72, "metallic": 0.0, "sheen": 1.0, "sheen_roughness": 0.4, "sheen_color": [0.75, 0.12, 0.28] }
+    },
+    {
+      "id": "lantern",
+      "shape": { "type": "sphere", "radius": 0.12 },
+      "position": [1.10, 1.22, 1.42],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.4,
+      "material": { "albedo": [0.78, 0.48, 0.16], "roughness": 0.28, "metallic": 0.85, "emissive": [1.0, 0.55, 0.12], "emissive_intensity": 16 }
+    },
+    {
+      "id": "drawer",
+      "shape": { "type": "box", "size": [0.22, 0.11, 0.16] },
+      "position": [-0.35, 0.10, 1.02],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.3,
+      "linear_velocity": [0.0, 0.0, 0.0],
+      "material": { "albedo": [0.50, 0.32, 0.16], "roughness": 0.72, "metallic": 0.0 }
+    },
+    {
+      "id": "charm",
+      "shape": { "type": "sphere", "radius": 0.06 },
+      "position": [1.32, 1.30, 1.48],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.15,
+      "material": { "albedo": [0.88, 0.70, 0.22], "roughness": 0.22, "metallic": 0.92 }
+    },
+    {
+      "id": "lid",
+      "shape": { "type": "box", "size": [0.28, 0.04, 0.28] },
+      "position": [-0.35, 0.28, 0.85],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.2,
+      "material": { "albedo": [0.45, 0.28, 0.14], "roughness": 0.75, "metallic": 0.0 }
+    },
+    {
+      "id": "platform",
+      "shape": { "type": "box", "size": [0.55, 0.06, 0.35] },
+      "position": [-0.55, 0.04, -0.55],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "kinematic": true,
+      "linear_velocity": [0.45, 0.0, 0.0],
+      "material": { "albedo": [0.38, 0.40, 0.44], "roughness": 0.55, "metallic": 0.0 }
+    },
+    {
+      "id": "rider",
+      "shape": { "type": "box", "size": [0.16, 0.16, 0.16] },
+      "position": [-0.55, 0.15, -0.55],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.35,
+      "material": { "albedo": [0.72, 0.38, 0.22], "roughness": 0.7, "metallic": 0.0 }
+    },
+    {
+      "id": "gate",
+      "shape": { "type": "box", "size": [0.06, 0.72, 0.42] },
+      "position": [0.35, 0.40, 1.75],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.5,
+      "material": { "albedo": [0.18, 0.42, 0.38], "roughness": 0.45, "metallic": 0.0 }
+    },
+    {
+      "id": "bob",
+      "shape": { "type": "sphere", "radius": 0.08 },
+      "position": [0.35, 0.88, 1.75],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.2,
+      "material": { "albedo": [0.82, 0.64, 0.22], "roughness": 0.28, "metallic": 0.85 }
+    }
+  ],
+  "joints": [
+    { "type": "hinge", "body_a": "pillar", "body_b": "lantern", "anchor": [1.10, 1.08, 1.10], "axis": [1.0, 0.0, 0.0], "motor_target_velocity": 4.0, "motor_max_force": 8.0 },
+    { "type": "slider", "body_a": "crate", "body_b": "drawer", "axis": [0.0, 0.0, 1.0], "limits": [0.0, 0.35], "anchor": [-0.35, 0.10, 1.02], "motor_target_velocity": -2.0, "motor_max_force": 6.0 },
+    { "type": "ball", "body_a": "lantern", "body_b": "charm", "anchor": [1.10, 1.16, 1.42] },
+    { "type": "fixed", "body_a": "crate", "body_b": "lid", "anchor": [-0.35, 0.26, 0.85] },
+    { "type": "hinge", "body_a": "ground", "body_b": "gate", "anchor": [0.35, 0.04, 1.75], "axis": [0.0, 1.0, 0.0], "limits": [0.0, 1.15], "motor_target_velocity": 1.4, "motor_max_force": 5.0 },
+    { "type": "distance", "body_a": "gate", "body_b": "bob", "anchor": [0.35, 0.76, 1.75], "rest_length": 0.38, "break_force": 1.5 }
+  ],
+  "triggers": [
+    { "id": "drawer_open", "shape": { "type": "box", "size": [0.30, 0.22, 0.28] }, "position": [-0.35, 0.10, 1.37] }
+  ],
+  "raycasts": [
+    { "id": "drawer_probe", "origin": [-0.35, 0.55, 1.35], "direction": [0.0, -0.806405, -0.591364], "max_toi": 2.0 }
+  ],
+  "shapecasts": [
+    { "id": "drawer_sweep", "origin": [-0.35, 0.55, 1.02], "direction": [0.0, -1.0, 0.0], "shape": { "type": "box", "size": [0.10, 0.04, 0.10] }, "max_toi": 1.0 }
+  ],
+  "impulses": [
+    { "body": "ball", "linear": [1.8, 0.4, 0.5] },
+    { "body": "bob", "linear": [0.0, -4.0, 1.6] }
+  ]
+}
+"#;
+
+pub fn increment43_scene_json() -> &'static str {
+    INCREMENT43_SCENE_JSON
+}
+
+/// Increment-42 courtyard plus a breakable gate–bob rope.
+/// Clones increment42_scene() so the courtyard (gate + limited hinge, rider,
+/// kinematic platform, lid + fixed, ball impulse, drawer_sweep, drawer_probe,
+/// slider motor -2/6, emissive lantern, drawer_open trigger, charm + ball,
+/// hinge motor, brass bob + distance) cannot drift. ONLY sets `break_force`
+/// ~1.5 on the existing `gate`–`bob` Distance joint and appends one extra
+/// impulse on the bob (`linear` `[0.0, -4.0, 1.6]`) so the rope snaps.
+/// Camera stays increment-42. No new lights. No new body.
+/// increment42_scene() stays unbreakable (`break_force` 0) and does not
+/// add the bob impulse.
+pub fn increment43_scene() -> Scene {
+    let mut scene = increment42_scene();
+    for joint in &mut scene.joints {
+        if let Joint::Distance {
+            body_a,
+            body_b,
+            break_force,
+            ..
+        } = joint
+        {
+            if body_a == "gate" && body_b == "bob" {
+                *break_force = 1.5;
+            }
+        }
+    }
+    scene.impulses.push(Impulse {
+        body: "bob".into(),
+        linear: [0.0, -4.0, 1.6],
     });
     scene
 }

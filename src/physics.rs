@@ -26,6 +26,16 @@ pub struct PhysicsDump {
     /// Authored impulses echoed after the last step.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub impulses: Vec<Impulse>,
+    /// Impulse joints removed because reaction exceeded `break_force`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub broken_joints: Vec<BrokenJoint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrokenJoint {
+    pub kind: String,
+    pub body_a: String,
+    pub body_b: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,6 +117,11 @@ struct PhysicsWorld {
     authored_joints: Vec<PhysicsJoint>,
     /// Impulse-joint handles for authored hinges, used to dump angle after step.
     hinge_handles: Vec<(usize, ImpulseJointHandle)>,
+    /// Impulse-joint handles for authored distance/rope joints + break_force.
+    distance_handles: Vec<(usize, ImpulseJointHandle, f32)>,
+    /// Authored-joint indices removed after a break_force snap.
+    broken_indices: Vec<usize>,
+    broken_joints: Vec<BrokenJoint>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
     physics_pipeline: PhysicsPipeline,
@@ -132,6 +147,9 @@ impl PhysicsWorld {
             kinematic_linvels: HashMap::new(),
             authored_joints: Vec::new(),
             hinge_handles: Vec::new(),
+            distance_handles: Vec::new(),
+            broken_indices: Vec::new(),
+            broken_joints: Vec::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
                 let mut p = IntegrationParameters::default();
@@ -523,6 +541,7 @@ impl PhysicsWorld {
                     body_b,
                     anchor,
                     rest_length,
+                    break_force,
                 } => {
                     let ha = *self.body_handles.get(body_a).ok_or_else(|| {
                         format!("distance body_a '{body_a}' not found")
@@ -549,13 +568,14 @@ impl PhysicsWorld {
                         .local_anchor2(local_b)
                         .contacts_enabled(false)
                         .build();
-                    self.impulse_joint_set.insert(ha, hb, rope, true);
+                    let handle = self.impulse_joint_set.insert(ha, hb, rope, true);
                     if let Some(rb) = self.rigid_body_set.get_mut(hb) {
                         // Hang damper so the bob settles on the rope
                         // instead of yo-yoing forever.
                         rb.set_angular_damping(3.0);
                         rb.set_linear_damping(1.0);
                     }
+                    let idx = self.authored_joints.len();
                     self.authored_joints.push(PhysicsJoint {
                         kind: "distance".into(),
                         body_a: body_a.clone(),
@@ -568,6 +588,7 @@ impl PhysicsWorld {
                         angle: None,
                         rest_length: Some(*rest_length),
                     });
+                    self.distance_handles.push((idx, handle, *break_force));
                 }
             }
         }
@@ -598,6 +619,48 @@ impl PhysicsWorld {
             &(),
             &(),
         );
+        self.break_overloaded_distance_joints();
+    }
+
+    fn break_overloaded_distance_joints(&mut self) {
+        let mut broken_slots: Vec<usize> = Vec::new();
+        for (slot, (_idx, handle, break_force)) in self.distance_handles.iter().enumerate() {
+            if *break_force <= 0.0 {
+                continue;
+            }
+            let Some(joint) = self.impulse_joint_set.get(*handle) else {
+                continue;
+            };
+            // Rapier 0.26 writes locked-DOF impulses to ImpulseJoint.impulses
+            // and limit/motor impulses to GenericJoint.limits/motors.
+            // A RopeJoint is a LinX limit, so the rope reaction lives in
+            // limits[LinX].impulse. Convert impulse → force via /dt so
+            // authored break_force (~1.5) is a force threshold: hang is
+            // ~0.5 N, the extra bob impulse spikes ~25 N.
+            let mut impulse_mag = joint.impulses.norm();
+            for lim in &joint.data.limits {
+                impulse_mag = impulse_mag.max(lim.impulse.abs());
+            }
+            for motor in &joint.data.motors {
+                impulse_mag = impulse_mag.max(motor.impulse.abs());
+            }
+            let dt = self.integration_parameters.dt;
+            let mag = if dt > 0.0 { impulse_mag / dt } else { impulse_mag };
+            if mag > *break_force {
+                broken_slots.push(slot);
+            }
+        }
+        for slot in broken_slots.into_iter().rev() {
+            let (idx, handle, _) = self.distance_handles.remove(slot);
+            self.impulse_joint_set.remove(handle, true);
+            let j = &self.authored_joints[idx];
+            self.broken_joints.push(BrokenJoint {
+                kind: j.kind.clone(),
+                body_a: j.body_a.clone(),
+                body_b: j.body_b.clone(),
+            });
+            self.broken_indices.push(idx);
+        }
     }
 
     fn snapshot_bodies(&self) -> Vec<PhysicsBodyState> {
@@ -830,11 +893,18 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         gravity: [0.0, -9.81, 0.0],
         bodies: world.snapshot_bodies(),
         contacts: world.snapshot_contacts(),
-        joints: world.authored_joints.clone(),
+        joints: world
+            .authored_joints
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !world.broken_indices.contains(i))
+            .map(|(_, j)| j.clone())
+            .collect(),
         overlaps: world.snapshot_overlaps(),
         ray_hits: world.snapshot_ray_hits(scene),
         sweep_hits: world.snapshot_sweep_hits(scene),
         impulses: scene.impulses.clone(),
+        broken_joints: world.broken_joints.clone(),
     })
 }
 

@@ -154,6 +154,7 @@ fn distance_of(scene: &agent_rig::Scene) -> (&str, &str, [f32; 3], f32) {
             body_b,
             anchor,
             rest_length,
+            ..
         } = j
         {
             return (body_a, body_b, *anchor, *rest_length);
