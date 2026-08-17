@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::scene::{Impulse, Joint, MeshCollider, RayHit, Scene, Shape, SweepHit, Trigger};
+use crate::scene::{
+    CharacterController, Impulse, Joint, MeshCollider, RayHit, Scene, Shape, SweepHit, Trigger,
+};
+use rapier3d::control::{CharacterLength, KinematicCharacterController};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhysicsDump {
@@ -34,6 +37,10 @@ pub struct PhysicsDump {
     /// Empty (and omitted) unless the scene set `record_contact_events`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contact_events: Vec<ContactEvent>,
+    /// Last-step kinematic character-controller state. Omitted when empty
+    /// so increment-47 dumps stay without a `controllers` key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub controllers: Vec<ControllerState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +48,14 @@ pub struct ContactEvent {
     pub kind: String,
     pub body_a: String,
     pub body_b: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControllerState {
+    pub id: String,
+    pub grounded: bool,
+    pub desired_velocity: [f32; 3],
+    pub effective_translation: [f32; 3],
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,6 +160,10 @@ struct PhysicsWorld {
     broken_joints: Vec<BrokenJoint>,
     record_contact_events: bool,
     contact_events: Vec<ContactEvent>,
+    /// Authored character controllers (body id -> wish velocity).
+    character_controllers: HashMap<String, CharacterController>,
+    /// Last-step controller dump (grounded + effective translation).
+    controller_states: Vec<ControllerState>,
     gravity: Vector<f32>,
     integration_parameters: IntegrationParameters,
     physics_pipeline: PhysicsPipeline,
@@ -175,6 +194,8 @@ impl PhysicsWorld {
             broken_joints: Vec::new(),
             record_contact_events: false,
             contact_events: Vec::new(),
+            character_controllers: HashMap::new(),
+            controller_states: Vec::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
                 let mut p = IntegrationParameters::default();
@@ -204,7 +225,12 @@ impl PhysicsWorld {
         let iso = Isometry::from_parts(Translation::new(x, y, z), rotation);
 
         let [vx, vy, vz] = body.linear_velocity;
-        let rb = if body.kinematic {
+        let rb = if body.controller.is_some() {
+            // Position-based kinematic: driven by move_shape, not linvel.
+            RigidBodyBuilder::kinematic_position_based()
+                .position(iso)
+                .build()
+        } else if body.kinematic {
             RigidBodyBuilder::kinematic_velocity_based()
                 .position(iso)
                 .linvel(vector![vx, vy, vz])
@@ -218,7 +244,10 @@ impl PhysicsWorld {
                 .build()
         };
         let handle = self.rigid_body_set.insert(rb);
-        if body.kinematic {
+        if let Some(ctrl) = &body.controller {
+            self.character_controllers
+                .insert(body.id.clone(), ctrl.clone());
+        } else if body.kinematic {
             self.kinematic_linvels
                 .insert(body.id.clone(), vector![vx, vy, vz]);
         }
@@ -709,6 +738,60 @@ impl PhysicsWorld {
         Ok(())
     }
 
+    fn drive_character_controllers(&mut self) {
+        if self.character_controllers.is_empty() {
+            self.controller_states.clear();
+            return;
+        }
+        self.query_pipeline.update(&self.collider_set);
+        let dt = self.integration_parameters.dt;
+        let controller = KinematicCharacterController {
+            snap_to_ground: Some(CharacterLength::Relative(0.2)),
+            slide: true,
+            ..Default::default()
+        };
+        let jobs: Vec<(String, RigidBodyHandle, [f32; 3])> = self
+            .character_controllers
+            .iter()
+            .map(|(id, ctrl)| (id.clone(), self.body_handles[id], ctrl.desired_velocity))
+            .collect();
+        let mut states = Vec::with_capacity(jobs.len());
+        for (id, handle, desired_velocity) in jobs {
+            let iso = *self.rigid_body_set[handle].position();
+            let col_h = self.rigid_body_set[handle].colliders()[0];
+            let shape = self.collider_set[col_h].shared_shape().clone();
+            let [vx, vy, vz] = desired_velocity;
+            // Authored wish is horizontal; add gravity*dt so snap_to_ground
+            // keeps the walker on the floor instead of floating.
+            let desired_translation =
+                vector![vx, vy, vz] * dt + self.gravity * dt;
+            let movement = controller.move_shape(
+                dt,
+                &self.rigid_body_set,
+                &self.collider_set,
+                &self.query_pipeline,
+                shape.as_ref(),
+                &iso,
+                desired_translation,
+                QueryFilter::default().exclude_rigid_body(handle),
+                |_| {},
+            );
+            let new_t = iso.translation.vector + movement.translation;
+            self.rigid_body_set[handle].set_next_kinematic_translation(new_t);
+            states.push(ControllerState {
+                id,
+                grounded: movement.grounded,
+                desired_velocity,
+                effective_translation: [
+                    movement.translation.x,
+                    movement.translation.y,
+                    movement.translation.z,
+                ],
+            });
+        }
+        self.controller_states = states;
+    }
+
     fn step(&mut self) {
         let kinematic_drives: Vec<(RigidBodyHandle, Vector<f32>)> = self
             .kinematic_linvels
@@ -718,6 +801,7 @@ impl PhysicsWorld {
         for (handle, vel) in kinematic_drives {
             self.rigid_body_set[handle].set_linvel(vel, true);
         }
+        self.drive_character_controllers();
         if self.record_contact_events {
             let collector = CollisionCollector {
                 events: Mutex::new(Vec::new()),
@@ -1060,6 +1144,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         impulses: scene.impulses.clone(),
         broken_joints: world.broken_joints.clone(),
         contact_events: world.contact_events.clone(),
+        controllers: world.controller_states.clone(),
     })
 }
 

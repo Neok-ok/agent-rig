@@ -220,6 +220,14 @@ fn default_area_normal() -> [f32; 3] {
     [0.0, -1.0, 0.0]
 }
 
+/// Authored kinematic character controller. World-space wish velocity (m/s).
+/// Horizontal wish is authored; the engine adds a downward component so
+/// the walker stays on the floor via Rapier snap_to_ground / gravity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterController {
+    pub desired_velocity: [f32; 3],
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Body {
     pub id: String,
@@ -234,6 +242,12 @@ pub struct Body {
     /// authored `linear_velocity` every physics step (constant authored vel).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub kinematic: bool,
+    /// Optional Rapier kinematic character controller. When Some, spawn
+    /// as kinematic_position_based and drive with move_shape each step.
+    /// Serde default none; omitted when none so increment 18–47 JSON stay compact.
+    /// Do not combine with `kinematic: true` (that is the increment-39 linvel drive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller: Option<CharacterController>,
     pub material: Material,
 }
 
@@ -1849,6 +1863,7 @@ pub fn increment28_scene() -> Scene {
         mass: 0.4,
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
+        controller: None,
         material: Material {
             albedo: [0.78, 0.48, 0.16],
             roughness: 0.28,
@@ -1988,6 +2003,7 @@ pub fn increment29_scene() -> Scene {
         mass: 0.3,
         linear_velocity: [0.0, 0.0, 2.5],
         kinematic: false,
+        controller: None,
         material: Material {
             albedo: [0.50, 0.32, 0.16],
             roughness: 0.72,
@@ -2247,6 +2263,7 @@ pub fn increment31_scene() -> Scene {
         mass: 0.15,
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
+        controller: None,
         material: Material {
             albedo: [0.88, 0.70, 0.22],
             roughness: 0.22,
@@ -3030,6 +3047,7 @@ pub fn increment37_scene() -> Scene {
         mass: 0.2,
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
+        controller: None,
         material: Material {
             albedo: [0.45, 0.28, 0.14],
             roughness: 0.75,
@@ -3345,6 +3363,7 @@ pub fn increment39_scene() -> Scene {
         mass: 0.0,
         linear_velocity: [0.45, 0.0, 0.0],
         kinematic: true,
+        controller: None,
         material: Material {
             albedo: [0.38, 0.40, 0.44],
             roughness: 0.55,
@@ -3524,6 +3543,7 @@ pub fn increment40_scene() -> Scene {
         mass: 0.35,
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
+        controller: None,
         material: Material {
             albedo: [0.72, 0.38, 0.22],
             roughness: 0.7,
@@ -3713,6 +3733,7 @@ pub fn increment41_scene() -> Scene {
         mass: 0.5,
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
+        controller: None,
         material: Material {
             albedo: [0.18, 0.42, 0.38],
             roughness: 0.45,
@@ -3925,6 +3946,7 @@ pub fn increment42_scene() -> Scene {
         mass: 0.2,
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
+        controller: None,
         material: Material {
             albedo: [0.82, 0.64, 0.22],
             roughness: 0.28,
@@ -4335,6 +4357,7 @@ pub fn increment44_scene() -> Scene {
         mass: 0.25,
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
+        controller: None,
         material: Material {
             albedo: [0.72, 0.58, 0.32],
             roughness: 0.8,
@@ -4766,5 +4789,73 @@ pub fn increment47_scene_json() -> &'static str {
 pub fn increment47_scene() -> Scene {
     let mut scene = increment46_scene();
     scene.record_contact_events = true;
+    scene
+}
+
+pub fn increment48_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        let mut v: serde_json::Value = serde_json::from_str(INCREMENT47_SCENE_JSON)
+            .expect("increment47 scene JSON is valid");
+        v["bodies"]
+            .as_array_mut()
+            .expect("increment47 bodies")
+            .push(serde_json::json!({
+                "id": "walker",
+                "shape": { "type": "box", "size": [0.18, 0.36, 0.18] },
+                "position": [1.15, 0.20, 1.45],
+                "rotation_wxyz": [1, 0, 0, 0],
+                "mass": 0,
+                "controller": { "desired_velocity": [-0.55, 0.0, 0.0] },
+                "material": { "albedo": [0.85, 0.22, 0.48], "roughness": 0.5, "metallic": 0.0 }
+            }));
+        serde_json::to_string_pretty(&v).expect("serialize increment48 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-47 courtyard plus one coral walker driven by a Rapier
+/// KinematicCharacterController. Clones increment47_scene() so camera /
+/// record_contact_events / courtyard (gate, cork, bob, rider, platform,
+/// lid, impulses, probes) cannot drift. Adds ONLY the `walker` body
+/// (box, mass 0, no increment-39 `kinematic` flag) with
+/// `controller.desired_velocity` ≈ [-0.55, 0, 0]. Camera stays
+/// [1.85, 1.35, 3.15] look_at [0.35, 0.42, 1.55] fov 40.
+/// increment47_scene() stays walker-free and controller-free.
+pub fn increment48_scene() -> Scene {
+    let mut scene = increment47_scene();
+    scene.bodies.push(Body {
+        id: "walker".into(),
+        shape: Shape::Box {
+            size: [0.18, 0.36, 0.18],
+        },
+        position: [1.15, 0.20, 1.45],
+        rotation_wxyz: [1.0, 0.0, 0.0, 0.0],
+        mass: 0.0,
+        linear_velocity: [0.0, 0.0, 0.0],
+        kinematic: false,
+        controller: Some(CharacterController {
+            desired_velocity: [-0.55, 0.0, 0.0],
+        }),
+        material: Material {
+            albedo: [0.85, 0.22, 0.48],
+            roughness: 0.5,
+            metallic: 0.0,
+            albedo_map: None,
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.0,
+            sheen: 0.0,
+            sheen_roughness: 0.5,
+            sheen_color: [1.0, 1.0, 1.0],
+            anisotropy: 0.0,
+            anisotropy_rotation: 0.0,
+            iridescence: 0.0,
+            iridescence_ior: 1.3,
+            iridescence_thickness: 400.0,
+            dispersion: 0.0,
+            emissive: [0.0, 0.0, 0.0],
+            emissive_intensity: 0.0,
+        },
+    });
     scene
 }
