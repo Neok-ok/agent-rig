@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::scene::{
-    CharacterController, Impulse, Joint, MeshCollider, RayHit, Scene, Shape, SweepHit, Trigger,
+    CharacterController, CollisionGroups, Impulse, Joint, MeshCollider, RayHit, Scene, Shape,
+    SweepHit, Trigger,
 };
 use rapier3d::control::{CharacterLength, KinematicCharacterController};
 
@@ -116,6 +117,10 @@ pub struct PhysicsBodyState {
     /// Omitted on dynamic/fixed bodies so existing dumps stay compact.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub kinematic: bool,
+    /// Authored Rapier InteractionGroups. Omitted when default (0xFFFF/0xFFFF)
+    /// so increment-48 dumps stay without a `collision_groups` key.
+    #[serde(default, skip_serializing_if = "CollisionGroups::is_default")]
+    pub collision_groups: CollisionGroups,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,6 +167,8 @@ struct PhysicsWorld {
     contact_events: Vec<ContactEvent>,
     /// Authored character controllers (body id -> wish velocity).
     character_controllers: HashMap<String, CharacterController>,
+    /// Authored collision groups (body id -> groups), echoed on the dump.
+    body_collision_groups: HashMap<String, CollisionGroups>,
     /// Last-step controller dump (grounded + effective translation).
     controller_states: Vec<ControllerState>,
     gravity: Vector<f32>,
@@ -195,6 +202,7 @@ impl PhysicsWorld {
             record_contact_events: false,
             contact_events: Vec::new(),
             character_controllers: HashMap::new(),
+            body_collision_groups: HashMap::new(),
             controller_states: Vec::new(),
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: {
@@ -296,6 +304,12 @@ impl PhysicsWorld {
         if scene.record_contact_events {
             collider.set_active_events(ActiveEvents::COLLISION_EVENTS);
         }
+        collider.set_collision_groups(InteractionGroups::new(
+            Group::from(body.collision_groups.membership),
+            Group::from(body.collision_groups.filter),
+        ));
+        self.body_collision_groups
+            .insert(body.id.clone(), body.collision_groups);
         let ch = self.collider_set.insert_with_parent(collider, handle, &mut self.rigid_body_set);
             self.body_handles.insert(body.id.clone(), handle);
             self.collider_to_id.insert(ch, body.id.clone());
@@ -765,6 +779,7 @@ impl PhysicsWorld {
             // keeps the walker on the floor instead of floating.
             let desired_translation =
                 vector![vx, vy, vz] * dt + self.gravity * dt;
+            let groups = self.collider_set[col_h].collision_groups();
             let movement = controller.move_shape(
                 dt,
                 &self.rigid_body_set,
@@ -773,7 +788,9 @@ impl PhysicsWorld {
                 shape.as_ref(),
                 &iso,
                 desired_translation,
-                QueryFilter::default().exclude_rigid_body(handle),
+                QueryFilter::default()
+                    .exclude_rigid_body(handle)
+                    .groups(groups),
                 |_| {},
             );
             let new_t = iso.translation.vector + movement.translation;
@@ -918,6 +935,11 @@ impl PhysicsWorld {
                 angular_velocity: [av.x, av.y, av.z],
                 collider: self.body_colliders.get(id).cloned().unwrap_or_default(),
                 kinematic: rb.is_kinematic(),
+                collision_groups: self
+                    .body_collision_groups
+                    .get(id)
+                    .copied()
+                    .unwrap_or_default(),
             });
         }
         bodies

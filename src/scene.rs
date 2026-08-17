@@ -220,6 +220,36 @@ fn default_area_normal() -> [f32; 3] {
     [0.0, -1.0, 0.0]
 }
 
+/// Rapier InteractionGroups membership + filter bitmasks.
+/// Collision iff (a.membership & b.filter) != 0 && (b.membership & a.filter) != 0.
+/// Serde default all-bits (0xFFFF / 0xFFFF); omitted when default so old JSON stays compact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollisionGroups {
+    #[serde(default = "default_collision_group_bits")]
+    pub membership: u32,
+    #[serde(default = "default_collision_group_bits")]
+    pub filter: u32,
+}
+
+fn default_collision_group_bits() -> u32 {
+    0xFFFF
+}
+
+impl Default for CollisionGroups {
+    fn default() -> Self {
+        Self {
+            membership: 0xFFFF,
+            filter: 0xFFFF,
+        }
+    }
+}
+
+impl CollisionGroups {
+    pub fn is_default(&self) -> bool {
+        self.membership == 0xFFFF && self.filter == 0xFFFF
+    }
+}
+
 /// Authored kinematic character controller. World-space wish velocity (m/s).
 /// Horizontal wish is authored; the engine adds a downward component so
 /// the walker stays on the floor via Rapier snap_to_ground / gravity.
@@ -248,6 +278,10 @@ pub struct Body {
     /// Do not combine with `kinematic: true` (that is the increment-39 linvel drive).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller: Option<CharacterController>,
+    /// Optional Rapier InteractionGroups. Serde default all-bits
+    /// (0xFFFF / 0xFFFF); omitted when default so increment 18–48 JSON stay compact.
+    #[serde(default, skip_serializing_if = "CollisionGroups::is_default")]
+    pub collision_groups: CollisionGroups,
     pub material: Material,
 }
 
@@ -1864,6 +1898,7 @@ pub fn increment28_scene() -> Scene {
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
         controller: None,
+        collision_groups: CollisionGroups::default(),
         material: Material {
             albedo: [0.78, 0.48, 0.16],
             roughness: 0.28,
@@ -2004,6 +2039,7 @@ pub fn increment29_scene() -> Scene {
         linear_velocity: [0.0, 0.0, 2.5],
         kinematic: false,
         controller: None,
+        collision_groups: CollisionGroups::default(),
         material: Material {
             albedo: [0.50, 0.32, 0.16],
             roughness: 0.72,
@@ -2264,6 +2300,7 @@ pub fn increment31_scene() -> Scene {
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
         controller: None,
+        collision_groups: CollisionGroups::default(),
         material: Material {
             albedo: [0.88, 0.70, 0.22],
             roughness: 0.22,
@@ -3048,6 +3085,7 @@ pub fn increment37_scene() -> Scene {
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
         controller: None,
+        collision_groups: CollisionGroups::default(),
         material: Material {
             albedo: [0.45, 0.28, 0.14],
             roughness: 0.75,
@@ -3364,6 +3402,7 @@ pub fn increment39_scene() -> Scene {
         linear_velocity: [0.45, 0.0, 0.0],
         kinematic: true,
         controller: None,
+        collision_groups: CollisionGroups::default(),
         material: Material {
             albedo: [0.38, 0.40, 0.44],
             roughness: 0.55,
@@ -3544,6 +3583,7 @@ pub fn increment40_scene() -> Scene {
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
         controller: None,
+        collision_groups: CollisionGroups::default(),
         material: Material {
             albedo: [0.72, 0.38, 0.22],
             roughness: 0.7,
@@ -3734,6 +3774,7 @@ pub fn increment41_scene() -> Scene {
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
         controller: None,
+        collision_groups: CollisionGroups::default(),
         material: Material {
             albedo: [0.18, 0.42, 0.38],
             roughness: 0.45,
@@ -3947,6 +3988,7 @@ pub fn increment42_scene() -> Scene {
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
         controller: None,
+        collision_groups: CollisionGroups::default(),
         material: Material {
             albedo: [0.82, 0.64, 0.22],
             roughness: 0.28,
@@ -4358,6 +4400,7 @@ pub fn increment44_scene() -> Scene {
         linear_velocity: [0.0, 0.0, 0.0],
         kinematic: false,
         controller: None,
+        collision_groups: CollisionGroups::default(),
         material: Material {
             albedo: [0.72, 0.58, 0.32],
             roughness: 0.8,
@@ -4837,9 +4880,95 @@ pub fn increment48_scene() -> Scene {
         controller: Some(CharacterController {
             desired_velocity: [-0.55, 0.0, 0.0],
         }),
+        collision_groups: CollisionGroups::default(),
         material: Material {
             albedo: [0.85, 0.22, 0.48],
             roughness: 0.5,
+            metallic: 0.0,
+            albedo_map: None,
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.0,
+            sheen: 0.0,
+            sheen_roughness: 0.5,
+            sheen_color: [1.0, 1.0, 1.0],
+            anisotropy: 0.0,
+            anisotropy_rotation: 0.0,
+            iridescence: 0.0,
+            iridescence_ior: 1.3,
+            iridescence_thickness: 400.0,
+            dispersion: 0.0,
+            emissive: [0.0, 0.0, 0.0],
+            emissive_intensity: 0.0,
+        },
+    });
+    scene
+}
+
+pub fn increment49_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        let mut v: serde_json::Value = serde_json::from_str(increment48_scene_json())
+            .expect("increment48 scene JSON is valid");
+        let bodies = v["bodies"]
+            .as_array_mut()
+            .expect("increment48 bodies");
+        for body in bodies.iter_mut() {
+            if body["id"] == "walker" {
+                body["collision_groups"] = serde_json::json!({
+                    "membership": 2,
+                    "filter": 1
+                });
+            }
+        }
+        bodies.push(serde_json::json!({
+            "id": "bar",
+            "shape": { "type": "box", "size": [0.08, 0.40, 0.28] },
+            "position": [0.55, 0.22, 1.45],
+            "rotation_wxyz": [1, 0, 0, 0],
+            "mass": 0,
+            "collision_groups": { "membership": 4, "filter": 65535 },
+            "material": { "albedo": [0.92, 0.78, 0.18], "roughness": 0.45, "metallic": 0.0 }
+        }));
+        serde_json::to_string_pretty(&v).expect("serialize increment49 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-48 courtyard plus a yellow bar the walker is authored to
+/// ignore. Clones increment48_scene() so camera / walker start /
+/// controller / record_contact_events / courtyard cannot drift. Adds
+/// ONLY (1) body `bar` and (2) `collision_groups` on `walker` and `bar`.
+/// Walker membership 2 / filter 1 (GROUND only). Bar membership 4 /
+/// filter 0xFFFF. Camera stays [1.85, 1.35, 3.15] look_at [0.35, 0.42, 1.55]
+/// fov 40. increment48_scene() stays bar-free and group-free.
+pub fn increment49_scene() -> Scene {
+    let mut scene = increment48_scene();
+    for body in &mut scene.bodies {
+        if body.id == "walker" {
+            body.collision_groups = CollisionGroups {
+                membership: 2,
+                filter: 1,
+            };
+        }
+    }
+    scene.bodies.push(Body {
+        id: "bar".into(),
+        shape: Shape::Box {
+            size: [0.08, 0.40, 0.28],
+        },
+        position: [0.55, 0.22, 1.45],
+        rotation_wxyz: [1.0, 0.0, 0.0, 0.0],
+        mass: 0.0,
+        linear_velocity: [0.0, 0.0, 0.0],
+        kinematic: false,
+        controller: None,
+        collision_groups: CollisionGroups {
+            membership: 4,
+            filter: 0xFFFF,
+        },
+        material: Material {
+            albedo: [0.92, 0.78, 0.18],
+            roughness: 0.45,
             metallic: 0.0,
             albedo_map: None,
             clearcoat: 0.0,
