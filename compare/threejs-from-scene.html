@@ -73,7 +73,12 @@ if (camParam) {
 } else {
   camera.position.fromArray(spec.camera.position);
 }
-camera.lookAt(...spec.camera.look_at);
+if (!camParam && dump.camera && dump.camera.position && dump.camera.look_at) {
+  camera.position.fromArray(dump.camera.position);
+  camera.lookAt(...dump.camera.look_at);
+} else {
+  camera.lookAt(...spec.camera.look_at);
+}
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.25));
 

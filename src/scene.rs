@@ -196,11 +196,21 @@ pub struct Impulse {
     pub linear: [f32; 3],
 }
 
+/// Follow a body after stepping. Omitted when none so increment 18–51
+/// JSON stay without a `follow` key.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CameraFollow {
+    pub body: String,
+    pub offset: [f32; 3],
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Camera {
     pub position: [f32; 3],
     pub look_at: [f32; 3],
     pub fov_y_deg: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow: Option<CameraFollow>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5139,6 +5149,32 @@ pub fn increment51_scene() -> Scene {
         body: "token".into(),
         trigger: "token_zone".into(),
         by: "walker".into(),
+    });
+    scene
+}
+
+pub fn increment52_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        let mut v: serde_json::Value = serde_json::from_str(increment51_scene_json())
+            .expect("increment51 scene JSON is valid");
+        v["camera"]["follow"] = serde_json::json!({
+            "body": "walker",
+            "offset": [1.20, 0.90, 1.50]
+        });
+        serde_json::to_string_pretty(&v).expect("serialize increment52 scene JSON")
+    })
+    .as_str()
+}
+
+/// Increment-51 courtyard plus follow-cam. Clones increment51_scene()
+/// so pickup / walker / courtyard cannot drift. Adds ONLY camera.follow.
+/// increment51_scene() stays follow-free (fixed gate-cluster camera).
+pub fn increment52_scene() -> Scene {
+    let mut scene = increment51_scene();
+    scene.camera.follow = Some(CameraFollow {
+        body: "walker".into(),
+        offset: [1.20, 0.90, 1.50],
     });
     scene
 }

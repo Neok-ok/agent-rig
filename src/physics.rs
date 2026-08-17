@@ -54,6 +54,17 @@ pub struct PhysicsDump {
     /// increment-50 dumps stay without a `picked_up` key.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub picked_up: Vec<PickupRecord>,
+    /// Resolved follow-cam after the last step. Omitted when the scene
+    /// has no camera.follow so increment-51 dumps stay without a `camera` key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera: Option<DumpCamera>,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DumpCamera {
+    pub position: [f32; 3],
+    pub look_at: [f32; 3],
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,7 +73,6 @@ pub struct PickupRecord {
     pub by: String,
     pub at_step: u32,
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpawnRecord {
     pub id: String,
@@ -1299,6 +1309,17 @@ impl PhysicsWorld {
     }
 }
 
+fn resolve_follow_camera(scene: &Scene, bodies: &[PhysicsBodyState]) -> Option<DumpCamera> {
+    let follow = scene.camera.follow.as_ref()?;
+    let body = bodies.iter().find(|b| b.id == follow.body)?;
+    let p = body.position;
+    let o = follow.offset;
+    Some(DumpCamera {
+        position: [p[0] + o[0], p[1] + o[1], p[2] + o[2]],
+        look_at: [p[0], p[1] + 0.15, p[2]],
+    })
+}
+
 pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, String> {
     let mut world = PhysicsWorld::from_scene(scene, dt)?;
     for i in 0..steps {
@@ -1307,11 +1328,13 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         world.apply_pickups(scene, i)?;
     }
     world.refresh_hinge_angles();
+    let bodies = world.snapshot_bodies();
+    let camera = resolve_follow_camera(scene, &bodies);
     Ok(PhysicsDump {
         steps,
         dt,
         gravity: [0.0, -9.81, 0.0],
-        bodies: world.snapshot_bodies(),
+        bodies,
         contacts: world.snapshot_contacts(),
         joints: world
             .authored_joints
@@ -1330,6 +1353,7 @@ pub fn step_physics(scene: &Scene, steps: u32, dt: f32) -> Result<PhysicsDump, S
         spawned: world.spawned.clone(),
         despawned: world.despawned.clone(),
         picked_up: world.picked_up.clone(),
+        camera,
     })
 }
 
