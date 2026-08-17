@@ -76,6 +76,14 @@ pub enum Joint {
         body_b: String,
         anchor: [f32; 3],
     },
+    /// Weld / fixed joint. `anchor` is world-space; converted to local on
+    /// each body at spawn. Locks all relative degrees of freedom.
+    #[serde(rename = "fixed")]
+    Fixed {
+        body_a: String,
+        body_b: String,
+        anchor: [f32; 3],
+    },
 }
 
 /// Authorable sensor volume. Does not generate contact forces.
@@ -2830,6 +2838,168 @@ pub fn increment36_scene() -> Scene {
             size: [0.10, 0.04, 0.10],
         },
         max_toi: 1.0,
+    });
+    scene
+}
+
+pub const INCREMENT37_SCENE_JSON: &str = r#"{
+  "camera": { "position": [3.6, 2.35, 5.2], "look_at": [0.1, 0.38, 0.0], "fov_y_deg": 40 },
+  "lights": [
+    { "type": "directional", "direction": [-0.45, -1.0, -0.35], "color": [1.0, 0.97, 0.92], "intensity": 3.0 },
+    { "type": "area", "position": [0.15, 1.45, 0.40], "size": [1.2, 0.8], "color": [1.0, 0.75, 0.45], "intensity": 40.0, "normal": [0.0, -1.0, 0.0] }
+  ],
+  "bodies": [
+    {
+      "id": "ground",
+      "shape": { "type": "mesh", "path": "meshes/bowl.obj", "collider": "trimesh" },
+      "position": [0, 0, 0],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0,
+      "material": { "albedo": [0.48, 0.44, 0.38], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "rock",
+      "shape": { "type": "mesh", "path": "meshes/rock.obj", "collider": "convex_hull" },
+      "position": [0.40, 0.002, 0.08],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 12.0,
+      "material": { "albedo": [0.48, 0.52, 0.62], "roughness": 0.28, "metallic": 0.2, "albedo_map": "textures/rock.png" }
+    },
+    {
+      "id": "ball",
+      "shape": { "type": "sphere", "radius": 0.32 },
+      "position": [-1.10, 0.36, 0.10],
+      "mass": 1.0,
+      "material": { "albedo": [0.92, 0.78, 0.45], "roughness": 0.15, "metallic": 0.9, "clearcoat": 1.0, "clearcoat_roughness": 0.08, "anisotropy": 0.95, "anisotropy_rotation": 0.6, "iridescence": 1.0, "iridescence_ior": 1.3, "iridescence_thickness": 380 }
+    },
+    {
+      "id": "pillar",
+      "shape": { "type": "mesh", "path": "meshes/pillar.gltf", "collider": "convex_hull" },
+      "position": [1.10, 0.002, 0.70],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 16.0,
+      "material": { "albedo": [0.40, 0.40, 0.42], "roughness": 0.85, "metallic": 0.0 }
+    },
+    {
+      "id": "pane",
+      "shape": { "type": "mesh", "path": "meshes/pane.gltf", "collider": "trimesh" },
+      "position": [0.50, 0.08, 2.20],
+      "rotation_wxyz": [0.9914449, 0.0, -0.1305262, 0.0],
+      "mass": 0,
+      "material": { "albedo": [0.75, 0.90, 1.00], "roughness": 0.08, "metallic": 0.0, "dispersion": 0.18 }
+    },
+    {
+      "id": "crate",
+      "shape": { "type": "mesh", "path": "meshes/crate.obj", "collider": "convex_hull" },
+      "position": [-0.35, 0.002, 0.85],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 2.5,
+      "material": { "albedo": [0.62, 0.40, 0.22], "roughness": 0.78, "metallic": 0.0 }
+    },
+    {
+      "id": "bench",
+      "shape": { "type": "mesh", "path": "meshes/bench.obj", "collider": "trimesh" },
+      "position": [1.35, 0.002, -0.15],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 5.0,
+      "material": { "albedo": [0.32, 0.36, 0.40], "roughness": 0.72, "metallic": 0.0, "sheen": 1.0, "sheen_roughness": 0.4, "sheen_color": [0.75, 0.12, 0.28] }
+    },
+    {
+      "id": "lantern",
+      "shape": { "type": "sphere", "radius": 0.12 },
+      "position": [1.10, 1.22, 1.42],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.4,
+      "material": { "albedo": [0.78, 0.48, 0.16], "roughness": 0.28, "metallic": 0.85, "emissive": [1.0, 0.55, 0.12], "emissive_intensity": 16 }
+    },
+    {
+      "id": "drawer",
+      "shape": { "type": "box", "size": [0.22, 0.11, 0.16] },
+      "position": [-0.35, 0.10, 1.02],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.3,
+      "linear_velocity": [0.0, 0.0, 0.0],
+      "material": { "albedo": [0.50, 0.32, 0.16], "roughness": 0.72, "metallic": 0.0 }
+    },
+    {
+      "id": "charm",
+      "shape": { "type": "sphere", "radius": 0.06 },
+      "position": [1.32, 1.30, 1.48],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.15,
+      "material": { "albedo": [0.88, 0.70, 0.22], "roughness": 0.22, "metallic": 0.92 }
+    },
+    {
+      "id": "lid",
+      "shape": { "type": "box", "size": [0.28, 0.04, 0.28] },
+      "position": [-0.35, 0.28, 0.85],
+      "rotation_wxyz": [1, 0, 0, 0],
+      "mass": 0.2,
+      "material": { "albedo": [0.45, 0.28, 0.14], "roughness": 0.75, "metallic": 0.0 }
+    }
+  ],
+  "joints": [
+    { "type": "hinge", "body_a": "pillar", "body_b": "lantern", "anchor": [1.10, 1.08, 1.10], "axis": [1.0, 0.0, 0.0], "motor_target_velocity": 4.0, "motor_max_force": 8.0 },
+    { "type": "slider", "body_a": "crate", "body_b": "drawer", "axis": [0.0, 0.0, 1.0], "limits": [0.0, 0.35], "anchor": [-0.35, 0.10, 1.02], "motor_target_velocity": -2.0, "motor_max_force": 6.0 },
+    { "type": "ball", "body_a": "lantern", "body_b": "charm", "anchor": [1.10, 1.16, 1.42] },
+    { "type": "fixed", "body_a": "crate", "body_b": "lid", "anchor": [-0.35, 0.26, 0.85] }
+  ],
+  "triggers": [
+    { "id": "drawer_open", "shape": { "type": "box", "size": [0.30, 0.22, 0.28] }, "position": [-0.35, 0.10, 1.37] }
+  ],
+  "raycasts": [
+    { "id": "drawer_probe", "origin": [-0.35, 0.55, 1.35], "direction": [0.0, -0.806405, -0.591364], "max_toi": 2.0 }
+  ],
+  "shapecasts": [
+    { "id": "drawer_sweep", "origin": [-0.35, 0.55, 1.02], "direction": [0.0, -1.0, 0.0], "shape": { "type": "box", "size": [0.10, 0.04, 0.10] }, "max_toi": 1.0 }
+  ]
+}"#;
+
+pub fn increment37_scene_json() -> &'static str {
+    INCREMENT37_SCENE_JSON
+}
+
+/// Increment-36 courtyard plus a crate lid welded with a Rapier fixed joint.
+/// Clones increment36_scene() so the courtyard (drawer_sweep, drawer_probe,
+/// slider motor -2/6, emissive lantern, drawer_open trigger, charm + ball,
+/// hinge motor) cannot drift. Adds ONLY the `lid` body and one `Fixed` joint.
+/// Camera stays increment-36. No new lights. increment36_scene() stays
+/// lid-free and fixed-joint-free.
+pub fn increment37_scene() -> Scene {
+    let mut scene = increment36_scene();
+    scene.bodies.push(Body {
+        id: "lid".into(),
+        shape: Shape::Box { size: [0.28, 0.04, 0.28] },
+        position: [-0.35, 0.28, 0.85],
+        rotation_wxyz: [1.0, 0.0, 0.0, 0.0],
+        mass: 0.2,
+        linear_velocity: [0.0, 0.0, 0.0],
+        material: Material {
+            albedo: [0.45, 0.28, 0.14],
+            roughness: 0.75,
+            metallic: 0.0,
+            albedo_map: None,
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.0,
+            sheen: 0.0,
+            sheen_roughness: 0.5,
+            sheen_color: [1.0, 1.0, 1.0],
+            anisotropy: 0.0,
+            anisotropy_rotation: 0.0,
+            iridescence: 0.0,
+            iridescence_ior: 1.3,
+            iridescence_thickness: 400.0,
+            dispersion: 0.0,
+            emissive: [0.0, 0.0, 0.0],
+            emissive_intensity: 0.0,
+        },
+    });
+    scene.joints.push(Joint::Fixed {
+        body_a: "crate".into(),
+        body_b: "lid".into(),
+        // World-space at the crate–lid interface (crate top / lid bottom).
+        // Converted to local anchors on each body at spawn.
+        anchor: [-0.35, 0.26, 0.85],
     });
     scene
 }

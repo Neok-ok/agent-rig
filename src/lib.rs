@@ -1,4 +1,4 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–36).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–37).
 
 mod mesh;
 mod physics;
@@ -14,7 +14,7 @@ pub use mesh::{
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
     increment3_scene_json, increment4_scene, increment4_scene_json, increment5_scene,
-    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, increment16_scene, increment16_scene_json, increment17_scene, increment17_scene_json, increment18_scene, increment18_scene_json, increment19_scene, increment19_scene_json, increment20_scene, increment20_scene_json, increment21_scene, increment21_scene_json, increment22_scene, increment22_scene_json, increment23_scene, increment23_scene_json, increment24_scene, increment24_scene_json, increment25_scene, increment25_scene_json, increment26_scene, increment26_scene_json, increment27_scene, increment27_scene_json, increment28_scene, increment28_scene_json, increment29_scene, increment29_scene_json, increment30_scene, increment30_scene_json, increment31_scene, increment31_scene_json, increment32_scene, increment32_scene_json, increment33_scene, increment33_scene_json, increment34_scene, increment34_scene_json, increment35_scene, increment35_scene_json, increment36_scene, increment36_scene_json, parse_scene, Body, Camera,
+    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, increment16_scene, increment16_scene_json, increment17_scene, increment17_scene_json, increment18_scene, increment18_scene_json, increment19_scene, increment19_scene_json, increment20_scene, increment20_scene_json, increment21_scene, increment21_scene_json, increment22_scene, increment22_scene_json, increment23_scene, increment23_scene_json, increment24_scene, increment24_scene_json, increment25_scene, increment25_scene_json, increment26_scene, increment26_scene_json, increment27_scene, increment27_scene_json, increment28_scene, increment28_scene_json, increment29_scene, increment29_scene_json, increment30_scene, increment30_scene_json, increment31_scene, increment31_scene_json, increment32_scene, increment32_scene_json, increment33_scene, increment33_scene_json, increment34_scene, increment34_scene_json, increment35_scene, increment35_scene_json, increment36_scene, increment36_scene_json, increment37_scene, increment37_scene_json, parse_scene, Body, Camera,
     Joint, Light, Material, MeshCollider, RayHit, Raycast, Scene, Shape, Shapecast, SweepHit, Trigger,
 };
 
@@ -61,6 +61,7 @@ pub const INCREMENT33_STEPS: u32 = 120;
 pub const INCREMENT34_STEPS: u32 = 120;
 pub const INCREMENT35_STEPS: u32 = 120;
 pub const INCREMENT36_STEPS: u32 = 120;
+pub const INCREMENT37_STEPS: u32 = 120;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -323,6 +324,16 @@ pub fn increment36() -> crate::scene::Scene {
 /// Increment 36: increment-35 courtyard plus an authored drawer_sweep shapecast.
 pub fn run_increment36(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
     write_step_render(out_dir, &increment36_scene(), steps, dt, width, height)
+}
+
+/// Increment 37: increment-36 courtyard plus a crate lid on a fixed joint.
+pub fn increment37() -> crate::scene::Scene {
+    increment37_scene()
+}
+
+/// Increment 37: increment-36 courtyard plus a crate lid on a fixed joint.
+pub fn run_increment37(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
+    write_step_render(out_dir, &increment37_scene(), steps, dt, width, height)
 }
 
 #[derive(Debug, Clone)]

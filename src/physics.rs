@@ -423,6 +423,44 @@ impl PhysicsWorld {
                         motor_max_force: None,
                     });
                 }
+                Joint::Fixed {
+                    body_a,
+                    body_b,
+                    anchor,
+                } => {
+                    let ha = *self.body_handles.get(body_a).ok_or_else(|| {
+                        format!("fixed body_a '{body_a}' not found")
+                    })?;
+                    let hb = *self.body_handles.get(body_b).ok_or_else(|| {
+                        format!("fixed body_b '{body_b}' not found")
+                    })?;
+                    let rb_a = &self.rigid_body_set[ha];
+                    let rb_b = &self.rigid_body_set[hb];
+                    let world_anchor = point![anchor[0], anchor[1], anchor[2]];
+                    let local_a = rb_a.position().inverse() * world_anchor;
+                    let local_b = rb_b.position().inverse() * world_anchor;
+                    let fixed = FixedJointBuilder::new()
+                        .local_anchor1(local_a)
+                        .local_anchor2(local_b)
+                        .contacts_enabled(false)
+                        .build();
+                    self.impulse_joint_set.insert(ha, hb, fixed, true);
+                    if let Some(rb) = self.rigid_body_set.get_mut(hb) {
+                        // Light damping so the weld does not jitter.
+                        rb.set_angular_damping(3.0);
+                        rb.set_linear_damping(1.0);
+                    }
+                    self.authored_joints.push(PhysicsJoint {
+                        kind: "fixed".into(),
+                        body_a: body_a.clone(),
+                        body_b: body_b.clone(),
+                        anchor: *anchor,
+                        axis: [0.0, 0.0, 0.0],
+                        limits: None,
+                        motor_target_velocity: None,
+                        motor_max_force: None,
+                    });
+                }
             }
         }
         Ok(())
@@ -595,11 +633,17 @@ impl PhysicsWorld {
             let dir = dir / len;
             let pos = Isometry::translation(sweep.origin[0], sweep.origin[1], sweep.origin[2]);
             let shape = Cuboid::new(vector![size[0] * 0.5, size[1] * 0.5, size[2] * 0.5]);
-            let mut filter = QueryFilter::default().exclude_sensors();
-            // Crate convex hull occupies the drawer front at z=1.02; don't let it steal the sweep.
-            if let Some(&crate_body) = self.body_handles.get("crate") {
-                filter = filter.exclude_rigid_body(crate_body);
-            }
+            // Crate convex hull occupies the drawer front at z=1.02; the welded
+            // lid can graze the sweep box. QueryFilter::exclude_rigid_body is
+            // a single Option, so skip both via predicate.
+            let collider_to_id = &self.collider_to_id;
+            let predicate = |handle, _: &Collider| match collider_to_id.get(&handle) {
+                Some(id) if id == "crate" || id == "lid" => false,
+                _ => true,
+            };
+            let filter = QueryFilter::default()
+                .exclude_sensors()
+                .predicate(&predicate);
             let options = ShapeCastOptions::with_max_time_of_impact(sweep.max_toi);
             let Some((handle, hit)) = self.query_pipeline.cast_shape(
                 &self.rigid_body_set,
