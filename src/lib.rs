@@ -1,4 +1,4 @@
-//! Agent-native scene + physics inspect + headless PNG (increments 1–65).
+//! Agent-native scene + physics inspect + headless PNG (increments 1–66).
 
 mod mesh;
 mod physics;
@@ -14,7 +14,7 @@ pub use mesh::{
 pub use scene::{
     demo_scene, demo_scene_json, increment2_scene, increment2_scene_json, increment3_scene,
     increment3_scene_json, increment4_scene, increment4_scene_json, increment5_scene,
-    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, increment16_scene, increment16_scene_json, increment17_scene, increment17_scene_json, increment18_scene, increment18_scene_json, increment19_scene, increment19_scene_json, increment20_scene, increment20_scene_json, increment21_scene, increment21_scene_json, increment22_scene, increment22_scene_json, increment23_scene, increment23_scene_json, increment24_scene, increment24_scene_json, increment25_scene, increment25_scene_json, increment26_scene, increment26_scene_json, increment27_scene, increment27_scene_json, increment28_scene, increment28_scene_json, increment29_scene, increment29_scene_json, increment30_scene, increment30_scene_json, increment31_scene, increment31_scene_json, increment32_scene, increment32_scene_json, increment33_scene, increment33_scene_json, increment34_scene, increment34_scene_json, increment35_scene, increment35_scene_json, increment36_scene, increment36_scene_json, increment37_scene, increment37_scene_json, increment38_scene, increment38_scene_json, increment39_scene, increment39_scene_json, increment40_scene, increment40_scene_json, increment41_scene, increment41_scene_json, increment42_scene, increment42_scene_json, increment43_scene, increment43_scene_json, increment44_scene, increment44_scene_json, increment45_scene, increment45_scene_json, increment46_scene, increment46_scene_json, increment47_scene, increment47_scene_json, increment48_scene, increment48_scene_json, increment49_scene, increment49_scene_json, increment50_scene, increment50_scene_json, increment51_scene, increment51_scene_json, increment52_scene, increment52_scene_json, increment53_scene, increment53_scene_json, increment54_scene, increment54_scene_json, increment55_scene, increment55_scene_json, increment56_scene, increment56_scene_json, increment57_scene, increment57_scene_json, increment58_scene, increment58_scene_json, increment59_scene, increment59_scene_json, increment60_scene, increment60_scene_json, increment61_scene, increment61_scene_json, increment62_scene, increment62_scene_json, increment63_scene, increment63_scene_json, increment64_scene, increment64_scene_json, increment65_scene, increment65_scene_json, scene_catalog, catalog_ids, scene_by_id, parse_scene, Body, Camera, CameraFollow, CharacterController, CollisionGroups, DespawnEvent, DropEvent, Pickup, PlayUntil, SpawnEvent, Transition, Win, UseEvent,
+    increment5_scene_json, increment6_scene, increment6_scene_json, increment7_scene, increment7_scene_json, increment8_scene, increment8_scene_json, increment9_scene, increment9_scene_json, increment10_scene, increment10_scene_json, increment11_scene, increment11_scene_json, increment12_scene, increment12_scene_json, increment13_scene, increment13_scene_json, increment14_scene, increment14_scene_json, increment15_scene, increment15_scene_json, increment16_scene, increment16_scene_json, increment17_scene, increment17_scene_json, increment18_scene, increment18_scene_json, increment19_scene, increment19_scene_json, increment20_scene, increment20_scene_json, increment21_scene, increment21_scene_json, increment22_scene, increment22_scene_json, increment23_scene, increment23_scene_json, increment24_scene, increment24_scene_json, increment25_scene, increment25_scene_json, increment26_scene, increment26_scene_json, increment27_scene, increment27_scene_json, increment28_scene, increment28_scene_json, increment29_scene, increment29_scene_json, increment30_scene, increment30_scene_json, increment31_scene, increment31_scene_json, increment32_scene, increment32_scene_json, increment33_scene, increment33_scene_json, increment34_scene, increment34_scene_json, increment35_scene, increment35_scene_json, increment36_scene, increment36_scene_json, increment37_scene, increment37_scene_json, increment38_scene, increment38_scene_json, increment39_scene, increment39_scene_json, increment40_scene, increment40_scene_json, increment41_scene, increment41_scene_json, increment42_scene, increment42_scene_json, increment43_scene, increment43_scene_json, increment44_scene, increment44_scene_json, increment45_scene, increment45_scene_json, increment46_scene, increment46_scene_json, increment47_scene, increment47_scene_json, increment48_scene, increment48_scene_json, increment49_scene, increment49_scene_json, increment50_scene, increment50_scene_json, increment51_scene, increment51_scene_json, increment52_scene, increment52_scene_json, increment53_scene, increment53_scene_json, increment54_scene, increment54_scene_json, increment55_scene, increment55_scene_json, increment56_scene, increment56_scene_json, increment57_scene, increment57_scene_json, increment58_scene, increment58_scene_json, increment59_scene, increment59_scene_json, increment60_scene, increment60_scene_json, increment61_scene, increment61_scene_json, increment62_scene, increment62_scene_json, increment63_scene, increment63_scene_json, increment64_scene, increment64_scene_json, increment65_scene, increment65_scene_json, increment66_scene, increment66_scene_json, increment66_handoff_scene, increment66_handoff_scene_json, vault_scene, scene_catalog, scene_catalog_v1, catalog_ids, scene_by_id, parse_scene, Body, Camera, CameraFollow, CharacterController, CollisionGroups, DespawnEvent, DropEvent, Pickup, PlayUntil, SpawnEvent, Transition, Win, UseEvent,
     Impulse, Joint, Light, Material, MeshCollider, RayHit, Raycast, Scene, Shape, Shapecast, SweepHit, Trigger,
 };
 
@@ -90,6 +90,7 @@ pub const INCREMENT62_STEPS: u32 = 120;
 pub const INCREMENT63_STEPS: u32 = 120;
 pub const INCREMENT64_STEPS: u32 = 120;
 pub const INCREMENT65_STEPS: u32 = 120;
+pub const INCREMENT66_STEPS: u32 = 120;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactPaths {
@@ -579,26 +580,31 @@ pub fn increment59() -> crate::scene::Scene {
     increment59_scene()
 }
 
-/// Write `[{id:courtyard},{id:lane}]` for the named-scene catalog.
-pub fn write_scenes_catalog(path: &Path) -> Result<(), String> {
+fn write_catalog_ids(path: &Path, ids: &[&str]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
         }
     }
-    let catalog = serde_json::json!([
-        { "id": "courtyard" },
-        { "id": "lane" }
-    ]);
+    let catalog: Vec<_> = ids.iter().map(|id| serde_json::json!({ "id": id })).collect();
     let json = serde_json::to_string_pretty(&catalog).map_err(|e| e.to_string())?;
     fs::write(path, json).map_err(|e| format!("write scenes catalog: {e}"))?;
     Ok(())
 }
 
+/// Write the current named-scene catalog.
+pub fn write_scenes_catalog(path: &Path) -> Result<(), String> {
+    write_catalog_ids(path, &catalog_ids())
+}
+
+fn write_scenes_catalog_v1(path: &Path) -> Result<(), String> {
+    write_catalog_ids(path, &["courtyard", "lane"])
+}
+
 /// Increment 59: named lane scene (steps is a max cap). Also writes scenes.json.
 pub fn run_increment59(out_dir: &Path, steps: u32, dt: f32, width: u32, height: u32) -> Result<ArtifactPaths, String> {
     let paths = write_step_render(out_dir, &increment59_scene(), steps, dt, width, height)?;
-    write_scenes_catalog(&out_dir.join("scenes.json"))?;
+    write_scenes_catalog_v1(&out_dir.join("scenes.json"))?;
     Ok(paths)
 }
 
@@ -1072,4 +1078,52 @@ pub fn render_scene_file(
         }
     }
     render_scene_to_png(&scene, width, height, out_path)
+}
+
+/// Increment 66: lane -> handoff courtyard -> vault, carrying the token throughout.
+pub fn run_increment66(
+    out_dir: &Path,
+    steps: u32,
+    dt: f32,
+    width: u32,
+    height: u32,
+) -> Result<ArtifactPaths, String> {
+    let lane = increment66_scene();
+    let paths = write_step_render(out_dir, &lane, steps, dt, width, height)?;
+    let lane_dump: PhysicsDump = serde_json::from_str(
+        &fs::read_to_string(&paths.physics).map_err(|e| format!("read physics: {e}"))?,
+    ).map_err(|e| format!("parse physics: {e}"))?;
+
+    let handoff = increment66_handoff_scene();
+    let next_dump = step_physics_with_carry(&handoff, 1, dt, Some(&lane_dump))?;
+    let next_scene_path = out_dir.join("next-scene.json");
+    let next_physics_path = out_dir.join("next-physics.json");
+    let next_frame_path = out_dir.join("next-frame.png");
+    fs::write(&next_scene_path, serde_json::to_string_pretty(&handoff).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("write next-scene: {e}"))?;
+    fs::write(&next_physics_path, serde_json::to_string_pretty(&next_dump).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("write next-physics: {e}"))?;
+    let mut next_framed = handoff.clone();
+    apply_physics_to_scene(&mut next_framed, &next_dump);
+    render_scene_to_png(&next_framed, width, height, &next_frame_path)?;
+
+    let vault = vault_scene();
+    let mut final_dump = step_physics_with_carry(&vault, 1, dt, Some(&next_dump))?;
+    apply_win(&mut final_dump, lane.win.as_ref());
+    let final_scene_path = out_dir.join("final-scene.json");
+    let final_physics_path = out_dir.join("final-physics.json");
+    let final_frame_path = out_dir.join("final-frame.png");
+    let mut final_framed = vault.clone();
+    if let Some(token) = lane.bodies.iter().find(|b| b.id == "token") {
+        final_framed.bodies.push(token.clone());
+    }
+    apply_physics_to_scene(&mut final_framed, &final_dump);
+    fs::write(&final_scene_path, serde_json::to_string_pretty(&final_framed).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("write final-scene: {e}"))?;
+    fs::write(&final_physics_path, serde_json::to_string_pretty(&final_dump).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("write final-physics: {e}"))?;
+    render_scene_to_png(&final_framed, width, height, &final_frame_path)?;
+
+    write_scenes_catalog(&out_dir.join("scenes.json"))?;
+    Ok(paths)
 }

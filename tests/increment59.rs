@@ -93,10 +93,9 @@ fn increment59_catalog() {
     assert!(ids.len() >= 2, "catalog must list courtyard and lane");
     assert_eq!(ids[0], "courtyard");
     assert_eq!(ids[1], "lane");
-    assert_eq!(ids.len(), 2, "no third catalog entry");
 
     let catalog = scene_catalog();
-    assert_eq!(catalog.len(), 2);
+    assert!(catalog.len() >= 2);
     assert_eq!(catalog[0].0, "courtyard");
     assert_eq!(catalog[1].0, "lane");
 

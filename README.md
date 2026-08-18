@@ -1,4 +1,4 @@
-# agent-rig (increments 1–65)
+# agent-rig (increments 1–66)
 
 Agent-native scene file + physics inspect + headless PNG. One command writes a JSON scene an agent can author, steps a real physics world, dumps body state and contacts, and renders the post-step frame with a small CPU Cook-Torrance raytracer plus procedural IBL (spheres, boxes, and triangle meshes from OBJ or a constrained glTF/GLB, with optional albedo textures and glTF pbrMetallicRoughness, including metallicRoughnessTexture, optional tangent-space normalTexture, optional emissiveFactor × emissiveTexture, optional alphaMode BLEND/MASK with non-1 alpha, optional occlusionTexture (AO, R channel), optional KHR_materials_transmission + IOR with Snell refraction, optional KHR_materials_volume Beer-Lambert attenuation, optional authored anisotropy + anisotropy_rotation on the gold ball, and optional authored iridescence + iridescence_ior + iridescence_thickness (thin-film rainbow) on the gold ball, and optional authored KHR_materials_dispersion on the glass pane so refracted highlights split into chromatic R/G/B fringes). Directional and point lights both cast shadow rays. A rectangular area light is multi-sampled for a soft penumbra. No GPU. No Three.js in the engine.
 
@@ -1953,4 +1953,12 @@ Increment 65: authorable use. increment65_scene clones increment63 (the win/carr
 
 ```bash
 agent-rig increment65 --out artifacts/increment65
+```
+
+Increment 66: complete the three-room game loop. `vault_scene()` is a third authored scene (compact dark-blue stone room with a bright plinth), catalog id `vault`. `increment66_scene()` clones increment65 (lane use+hold+transition courtyard+win). An increment66-only courtyard handoff clones increment53 and ONLY sets `transition` to vault. One command runs lane → courtyard → vault, carrying the token through both hops, then stamps `dump.won` delivered/token in the vault. Lane physics stays byte-identical to increment65. Courtyard next-physics has the token, no win, and `transition vault@66`. Vault final-physics has token+plinth and `won={kind:delivered,body:token,scene:vault}`. Catalog order is courtyard, lane, vault. increment59 still writes the frozen two-entry `scenes.json`. increment65 remains two-hop and still wins in the courtyard.
+
+```bash
+agent-rig increment66 --out artifacts/increment66
+agent-rig sim --scene vault
+agent-rig sim --scene vault --carry artifacts/increment65/physics.json
 ```

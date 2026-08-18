@@ -5625,23 +5625,30 @@ pub fn increment59_scene() -> Scene {
     scene
 }
 
-/// Named scenes an agent can list and run. Stable order: courtyard, lane.
-/// Catalog maps the name; increment53 JSON is not rewritten with an id.
-pub fn scene_catalog() -> Vec<(&'static str, Scene)> {
+/// Frozen increment-59 catalog. Keep this two-entry path reproducible.
+pub fn scene_catalog_v1() -> Vec<(&'static str, Scene)> {
     vec![
         ("courtyard", increment53_scene()),
         ("lane", increment59_scene()),
     ]
 }
 
+/// Named scenes an agent can list and run. Stable order: courtyard, lane, vault.
+pub fn scene_catalog() -> Vec<(&'static str, Scene)> {
+    let mut catalog = scene_catalog_v1();
+    catalog.push(("vault", vault_scene()));
+    catalog
+}
+
 pub fn catalog_ids() -> Vec<&'static str> {
-    vec!["courtyard", "lane"]
+    vec!["courtyard", "lane", "vault"]
 }
 
 pub fn scene_by_id(id: &str) -> Option<Scene> {
     match id {
         "courtyard" => Some(increment53_scene()),
         "lane" => Some(increment59_scene()),
+        "vault" => Some(vault_scene()),
         _ => None,
     }
 }
@@ -5760,3 +5767,80 @@ pub fn increment65_scene() -> Scene {
     scene
 }
 
+
+/// A compact dark-blue stone vault authored independently of lane and courtyard.
+pub fn vault_scene() -> Scene {
+    fn body(id: &str, size: [f32; 3], position: [f32; 3], material: Material) -> Body {
+        Body {
+            id: id.into(),
+            shape: Shape::Box { size },
+            position,
+            rotation_wxyz: [1.0, 0.0, 0.0, 0.0],
+            mass: 0.0,
+            linear_velocity: [0.0, 0.0, 0.0],
+            kinematic: false,
+            controller: None,
+            collision_groups: CollisionGroups { membership: 1, filter: 0xFFFF },
+            material,
+        }
+    }
+    let navy = lane_material([0.025, 0.055, 0.13], 0.92, 0.0);
+    let stone = lane_material([0.07, 0.14, 0.30], 0.82, 0.05);
+    let mut plinth_mat = lane_material([0.55, 0.92, 1.0], 0.20, 0.25);
+    plinth_mat.emissive = [0.18, 0.55, 0.85];
+    plinth_mat.emissive_intensity = 2.2;
+    let mut walker = body(
+        "walker", [0.18, 0.36, 0.18], [0.0, 0.20, 0.28],
+        lane_material([0.92, 0.25, 0.48], 0.48, 0.0),
+    );
+    walker.controller = Some(CharacterController { desired_velocity: [0.0, 0.0, 0.0] });
+    walker.collision_groups = CollisionGroups { membership: 2, filter: 1 };
+    Scene {
+        id: "vault".into(),
+        camera: Camera {
+            position: [1.2, 0.9, 1.5],
+            look_at: [0.0, 0.28, -0.25],
+            fov_y_deg: 42.0,
+            follow: Some(CameraFollow { body: "walker".into(), offset: [1.2, 0.9, 1.5] }),
+        },
+        lights: vec![Light::Directional {
+            direction: [-0.55, -1.0, -0.45], color: [0.62, 0.82, 1.0], intensity: 3.4,
+        }],
+        bodies: vec![
+            body("ground", [2.4, 0.08, 2.0], [0.0, -0.04, 0.0], navy),
+            body("left_wall", [0.12, 1.15, 2.0], [-1.14, 0.55, 0.0], stone.clone()),
+            body("right_wall", [0.12, 1.15, 2.0], [1.14, 0.55, 0.0], stone.clone()),
+            body("back_wall", [2.4, 1.15, 0.12], [0.0, 0.55, -0.94], stone),
+            body("plinth", [0.48, 0.28, 0.42], [0.0, 0.14, -0.55], plinth_mat),
+            walker,
+        ],
+        joints: vec![], triggers: vec![], raycasts: vec![], ray_hits: vec![],
+        shapecasts: vec![], sweep_hits: vec![], impulses: vec![],
+        record_contact_events: false, spawns: vec![], despawns: vec![], pickups: vec![],
+        drops: vec![], play_until: None, transition: None, win: None, uses: vec![],
+        mesh_search_dirs: vec![],
+    }
+}
+
+pub fn increment66_scene() -> Scene {
+    increment65_scene()
+}
+
+pub fn increment66_scene_json() -> &'static str {
+    increment65_scene_json()
+}
+
+pub fn increment66_handoff_scene() -> Scene {
+    let mut scene = increment53_scene();
+    scene.id = "courtyard".into();
+    scene.transition = Some(Transition { to: "vault".into() });
+    scene
+}
+
+pub fn increment66_handoff_scene_json() -> &'static str {
+    static JSON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JSON.get_or_init(|| {
+        serde_json::to_string_pretty(&increment66_handoff_scene())
+            .expect("serialize increment66 handoff")
+    }).as_str()
+}

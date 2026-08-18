@@ -1,0 +1,265 @@
+{
+  "steps": 1,
+  "dt": 0.016666668,
+  "gravity": [
+    0.0,
+    -9.81,
+    0.0
+  ],
+  "bodies": [
+    {
+      "id": "ground",
+      "position": [
+        0.0,
+        -0.04,
+        0.0
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "cuboid",
+      "collision_groups": {
+        "membership": 1,
+        "filter": 65535
+      }
+    },
+    {
+      "id": "left_wall",
+      "position": [
+        -1.14,
+        0.55,
+        0.0
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "cuboid",
+      "collision_groups": {
+        "membership": 1,
+        "filter": 65535
+      }
+    },
+    {
+      "id": "right_wall",
+      "position": [
+        1.14,
+        0.55,
+        0.0
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "cuboid",
+      "collision_groups": {
+        "membership": 1,
+        "filter": 65535
+      }
+    },
+    {
+      "id": "back_wall",
+      "position": [
+        0.0,
+        0.55,
+        -0.94
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "cuboid",
+      "collision_groups": {
+        "membership": 1,
+        "filter": 65535
+      }
+    },
+    {
+      "id": "plinth",
+      "position": [
+        0.0,
+        0.14,
+        -0.55
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "cuboid",
+      "collision_groups": {
+        "membership": 1,
+        "filter": 65535
+      }
+    },
+    {
+      "id": "walker",
+      "position": [
+        -0.0000016125479,
+        0.18360001,
+        0.2800008
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        -0.00009675287,
+        -0.9839996,
+        0.00004827976
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "cuboid",
+      "kinematic": true,
+      "collision_groups": {
+        "membership": 2,
+        "filter": 1
+      }
+    },
+    {
+      "id": "token",
+      "position": [
+        0.15999839,
+        0.4036,
+        0.2800008
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "angular_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collider": "ball",
+      "collision_groups": {
+        "membership": 4,
+        "filter": 65535
+      }
+    }
+  ],
+  "contacts": [],
+  "joints": [],
+  "controllers": [
+    {
+      "id": "walker",
+      "grounded": true,
+      "desired_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "effective_translation": [
+        -0.0000016125479,
+        -0.016399987,
+        8.0627393e-7
+      ]
+    }
+  ],
+  "picked_up": [
+    {
+      "id": "token",
+      "by": "walker",
+      "at_step": 66
+    }
+  ],
+  "held": [
+    {
+      "id": "token",
+      "by": "walker",
+      "at_step": 66
+    }
+  ],
+  "camera": {
+    "position": [
+      1.1999984,
+      1.0836,
+      1.7800008
+    ],
+    "look_at": [
+      -0.0000016125479,
+      0.3336,
+      0.2800008
+    ]
+  },
+  "scene": "vault",
+  "won": {
+    "kind": "delivered",
+    "body": "token",
+    "scene": "vault"
+  }
+}

@@ -1,0 +1,397 @@
+{
+  "camera": {
+    "position": [
+      0.2,
+      1.15,
+      2.2
+    ],
+    "look_at": [
+      0.2,
+      0.28,
+      0.0
+    ],
+    "fov_y_deg": 40.0,
+    "follow": {
+      "body": "walker",
+      "offset": [
+        -1.0,
+        0.8,
+        1.6
+      ]
+    }
+  },
+  "id": "lane",
+  "lights": [
+    {
+      "type": "directional",
+      "direction": [
+        -0.45,
+        -1.0,
+        -0.35
+      ],
+      "color": [
+        1.0,
+        0.97,
+        0.92
+      ],
+      "intensity": 3.0
+    }
+  ],
+  "bodies": [
+    {
+      "id": "ground",
+      "shape": {
+        "type": "box",
+        "size": [
+          3.0,
+          0.04,
+          1.6
+        ]
+      },
+      "position": [
+        0.0,
+        -0.02,
+        0.0
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass": 0.0,
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collision_groups": {
+        "membership": 1,
+        "filter": 65535
+      },
+      "material": {
+        "albedo": [
+          0.42,
+          0.4,
+          0.36
+        ],
+        "roughness": 0.8,
+        "metallic": 0.0,
+        "clearcoat": 0.0,
+        "clearcoat_roughness": 0.0,
+        "sheen": 0.0,
+        "sheen_roughness": 0.5,
+        "sheen_color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "anisotropy": 0.0,
+        "anisotropy_rotation": 0.0,
+        "iridescence": 0.0,
+        "iridescence_ior": 1.3,
+        "iridescence_thickness": 400.0,
+        "dispersion": 0.0
+      }
+    },
+    {
+      "id": "walker",
+      "shape": {
+        "type": "box",
+        "size": [
+          0.18,
+          0.36,
+          0.18
+        ]
+      },
+      "position": [
+        -0.2,
+        0.2,
+        0.0
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass": 0.0,
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "controller": {
+        "desired_velocity": [
+          0.55,
+          0.0,
+          0.0
+        ]
+      },
+      "collision_groups": {
+        "membership": 2,
+        "filter": 1
+      },
+      "material": {
+        "albedo": [
+          0.85,
+          0.22,
+          0.48
+        ],
+        "roughness": 0.5,
+        "metallic": 0.0,
+        "clearcoat": 0.0,
+        "clearcoat_roughness": 0.0,
+        "sheen": 0.0,
+        "sheen_roughness": 0.5,
+        "sheen_color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "anisotropy": 0.0,
+        "anisotropy_rotation": 0.0,
+        "iridescence": 0.0,
+        "iridescence_ior": 1.3,
+        "iridescence_thickness": 400.0,
+        "dispersion": 0.0
+      }
+    },
+    {
+      "id": "token",
+      "shape": {
+        "type": "sphere",
+        "radius": 0.1
+      },
+      "position": [
+        0.7,
+        0.12,
+        0.0
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass": 0.0,
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collision_groups": {
+        "membership": 4,
+        "filter": 65535
+      },
+      "material": {
+        "albedo": [
+          0.95,
+          0.78,
+          0.22
+        ],
+        "roughness": 0.35,
+        "metallic": 0.85,
+        "clearcoat": 0.0,
+        "clearcoat_roughness": 0.0,
+        "sheen": 0.0,
+        "sheen_roughness": 0.5,
+        "sheen_color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "anisotropy": 0.0,
+        "anisotropy_rotation": 0.0,
+        "iridescence": 0.0,
+        "iridescence_ior": 1.3,
+        "iridescence_thickness": 400.0,
+        "dispersion": 0.0
+      }
+    },
+    {
+      "id": "block",
+      "shape": {
+        "type": "box",
+        "size": [
+          0.16,
+          0.3,
+          0.16
+        ]
+      },
+      "position": [
+        0.15,
+        0.15,
+        -0.55
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass": 0.0,
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "collision_groups": {
+        "membership": 4,
+        "filter": 65535
+      },
+      "material": {
+        "albedo": [
+          0.15,
+          0.55,
+          0.55
+        ],
+        "roughness": 0.6,
+        "metallic": 0.0,
+        "clearcoat": 0.0,
+        "clearcoat_roughness": 0.0,
+        "sheen": 0.0,
+        "sheen_roughness": 0.5,
+        "sheen_color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "anisotropy": 0.0,
+        "anisotropy_rotation": 0.0,
+        "iridescence": 0.0,
+        "iridescence_ior": 1.3,
+        "iridescence_thickness": 400.0,
+        "dispersion": 0.0
+      }
+    },
+    {
+      "id": "npc",
+      "shape": {
+        "type": "box",
+        "size": [
+          0.18,
+          0.36,
+          0.18
+        ]
+      },
+      "position": [
+        1.35,
+        0.2,
+        0.0
+      ],
+      "rotation_wxyz": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass": 0.0,
+      "linear_velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "controller": {
+        "desired_velocity": [
+          -0.4,
+          0.0,
+          0.0
+        ]
+      },
+      "collision_groups": {
+        "membership": 2,
+        "filter": 1
+      },
+      "material": {
+        "albedo": [
+          0.9,
+          0.55,
+          0.18
+        ],
+        "roughness": 0.45,
+        "metallic": 0.0,
+        "clearcoat": 0.0,
+        "clearcoat_roughness": 0.0,
+        "sheen": 0.0,
+        "sheen_roughness": 0.5,
+        "sheen_color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "anisotropy": 0.0,
+        "anisotropy_rotation": 0.0,
+        "iridescence": 0.0,
+        "iridescence_ior": 1.3,
+        "iridescence_thickness": 400.0,
+        "dispersion": 0.0
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "token_zone",
+      "shape": {
+        "type": "box",
+        "size": [
+          0.4,
+          0.4,
+          0.4
+        ]
+      },
+      "position": [
+        0.7,
+        0.12,
+        0.0
+      ]
+    },
+    {
+      "id": "exit",
+      "shape": {
+        "type": "box",
+        "size": [
+          0.4,
+          0.4,
+          0.4
+        ]
+      },
+      "position": [
+        1.0,
+        0.2,
+        0.0
+      ]
+    }
+  ],
+  "pickups": [
+    {
+      "body": "token",
+      "trigger": "token_zone",
+      "by": "walker",
+      "hold": true,
+      "hold_offset": [
+        0.16,
+        0.22,
+        0.0
+      ]
+    }
+  ],
+  "play_until": {
+    "kind": "entered",
+    "body": "exit"
+  },
+  "transition": {
+    "to": "courtyard"
+  },
+  "win": {
+    "kind": "delivered",
+    "body": "token"
+  },
+  "uses": [
+    {
+      "body": "token",
+      "trigger": "exit",
+      "by": "walker"
+    }
+  ]
+}

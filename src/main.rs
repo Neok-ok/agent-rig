@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 use agent_rig::{
     render_scene_file, run_increment1, run_increment2, run_increment3, run_increment4,
-    run_increment5, run_increment6, run_increment7, run_increment8, run_increment9, run_increment10, run_increment11, run_increment12, run_increment13, run_increment14, run_increment15, run_increment16, run_increment17, run_increment18, run_increment19, run_increment20, run_increment21, run_increment22, run_increment23, run_increment24, run_increment25, run_increment26, run_increment27, run_increment28, run_increment29, run_increment30, run_increment31, run_increment32, run_increment33, run_increment34, run_increment35, run_increment36, run_increment37, run_increment38, run_increment39, run_increment40, run_increment41, run_increment42, run_increment43, run_increment44, run_increment45, run_increment46, run_increment47, run_increment48, run_increment49, run_increment50, run_increment51, run_increment52, run_increment53, run_increment54, run_increment55, run_increment56, run_increment57, run_increment58, run_increment59, run_increment60, run_increment61, run_increment62, run_increment63, run_increment64, run_increment65, run_catalog_scene_with_carry, PhysicsDump, write_scenes_catalog, catalog_ids, sim_scene_file, step_scene_file, DEFAULT_DT,
+    run_increment5, run_increment6, run_increment7, run_increment8, run_increment9, run_increment10, run_increment11, run_increment12, run_increment13, run_increment14, run_increment15, run_increment16, run_increment17, run_increment18, run_increment19, run_increment20, run_increment21, run_increment22, run_increment23, run_increment24, run_increment25, run_increment26, run_increment27, run_increment28, run_increment29, run_increment30, run_increment31, run_increment32, run_increment33, run_increment34, run_increment35, run_increment36, run_increment37, run_increment38, run_increment39, run_increment40, run_increment41, run_increment42, run_increment43, run_increment44, run_increment45, run_increment46, run_increment47, run_increment48, run_increment49, run_increment50, run_increment51, run_increment52, run_increment53, run_increment54, run_increment55, run_increment56, run_increment57, run_increment58, run_increment59, run_increment60, run_increment61, run_increment62, run_increment63, run_increment64, run_increment65, run_increment66, run_catalog_scene_with_carry, PhysicsDump, write_scenes_catalog, catalog_ids, sim_scene_file, step_scene_file, DEFAULT_DT,
     DEFAULT_STEPS, FRAME_HEIGHT, FRAME_WIDTH, INCREMENT2_STEPS, INCREMENT3_FRAMES, INCREMENT3_STRIDE,
     INCREMENT4_STEPS, INCREMENT5_STEPS, INCREMENT6_STEPS, INCREMENT7_STEPS, INCREMENT8_STEPS,
     INCREMENT9_STEPS, INCREMENT10_STEPS, INCREMENT11_STEPS, INCREMENT12_STEPS, INCREMENT13_STEPS,
-    INCREMENT14_STEPS, INCREMENT15_FRAMES, INCREMENT15_STRIDE, INCREMENT16_STEPS, INCREMENT17_STEPS, INCREMENT18_STEPS, INCREMENT19_STEPS, INCREMENT20_STEPS, INCREMENT21_STEPS, INCREMENT22_STEPS, INCREMENT23_STEPS, INCREMENT24_STEPS, INCREMENT25_STEPS, INCREMENT26_STEPS, INCREMENT27_STEPS, INCREMENT28_STEPS, INCREMENT29_STEPS, INCREMENT30_STEPS, INCREMENT31_STEPS, INCREMENT32_STEPS, INCREMENT33_STEPS, INCREMENT34_STEPS, INCREMENT35_STEPS, INCREMENT36_STEPS, INCREMENT37_STEPS, INCREMENT38_STEPS, INCREMENT39_STEPS, INCREMENT40_STEPS, INCREMENT41_STEPS, INCREMENT42_STEPS, INCREMENT43_STEPS, INCREMENT44_STEPS, INCREMENT45_STEPS, INCREMENT46_STEPS, INCREMENT47_STEPS, INCREMENT48_STEPS, INCREMENT49_STEPS, INCREMENT50_STEPS, INCREMENT51_STEPS, INCREMENT52_STEPS, INCREMENT53_STEPS, INCREMENT54_STEPS, INCREMENT55_STEPS, INCREMENT56_STEPS, INCREMENT57_STEPS, INCREMENT58_STEPS, INCREMENT59_STEPS, INCREMENT60_STEPS, INCREMENT61_STEPS, INCREMENT62_STEPS, INCREMENT63_STEPS, INCREMENT64_STEPS, INCREMENT65_STEPS,
+    INCREMENT14_STEPS, INCREMENT15_FRAMES, INCREMENT15_STRIDE, INCREMENT16_STEPS, INCREMENT17_STEPS, INCREMENT18_STEPS, INCREMENT19_STEPS, INCREMENT20_STEPS, INCREMENT21_STEPS, INCREMENT22_STEPS, INCREMENT23_STEPS, INCREMENT24_STEPS, INCREMENT25_STEPS, INCREMENT26_STEPS, INCREMENT27_STEPS, INCREMENT28_STEPS, INCREMENT29_STEPS, INCREMENT30_STEPS, INCREMENT31_STEPS, INCREMENT32_STEPS, INCREMENT33_STEPS, INCREMENT34_STEPS, INCREMENT35_STEPS, INCREMENT36_STEPS, INCREMENT37_STEPS, INCREMENT38_STEPS, INCREMENT39_STEPS, INCREMENT40_STEPS, INCREMENT41_STEPS, INCREMENT42_STEPS, INCREMENT43_STEPS, INCREMENT44_STEPS, INCREMENT45_STEPS, INCREMENT46_STEPS, INCREMENT47_STEPS, INCREMENT48_STEPS, INCREMENT49_STEPS, INCREMENT50_STEPS, INCREMENT51_STEPS, INCREMENT52_STEPS, INCREMENT53_STEPS, INCREMENT54_STEPS, INCREMENT55_STEPS, INCREMENT56_STEPS, INCREMENT57_STEPS, INCREMENT58_STEPS, INCREMENT59_STEPS, INCREMENT60_STEPS, INCREMENT61_STEPS, INCREMENT62_STEPS, INCREMENT63_STEPS, INCREMENT64_STEPS, INCREMENT65_STEPS, INCREMENT66_STEPS,
 };
 use clap::{Parser, Subcommand};
 
@@ -758,7 +758,18 @@ enum Command {
         #[arg(long, default_value_t = FRAME_HEIGHT)]
         height: u32,
     },
-    /// List named scenes in the catalog (courtyard, lane).
+    /// Increment 66: complete lane -> courtyard -> vault game loop.
+    Increment66 {
+        #[arg(long, default_value = "artifacts/increment66")]
+        out: PathBuf,
+        #[arg(long, default_value_t = INCREMENT66_STEPS)]
+        steps: u32,
+        #[arg(long, default_value_t = FRAME_WIDTH)]
+        width: u32,
+        #[arg(long, default_value_t = FRAME_HEIGHT)]
+        height: u32,
+    },
+    /// List named scenes in the catalog (courtyard, lane, vault).
     Scenes {
         /// Write `[{id:courtyard},{id:lane}]`. If omitted, print ids to stdout.
         #[arg(long)]
@@ -785,7 +796,7 @@ enum Command {
         /// Scene JSON file (file-based trajectory sim). Omit when --scene is set.
         #[arg(required_unless_present = "catalog_scene")]
         scene: Option<PathBuf>,
-        /// Catalog scene id (courtyard, lane).
+        /// Catalog scene id (courtyard, lane, vault).
         #[arg(long = "scene", value_name = "ID", id = "catalog_scene")]
         catalog_scene: Option<String>,
         #[arg(long, default_value_t = INCREMENT3_FRAMES)]
@@ -1224,6 +1235,12 @@ fn main() {
             width,
             height,
         }) => run_increment65(&out, steps, DEFAULT_DT, width, height).map(Some),
+        Some(Command::Increment66 {
+            out,
+            steps,
+            width,
+            height,
+        }) => run_increment66(&out, steps, DEFAULT_DT, width, height).map(Some),
         Some(Command::Scenes { out }) => {
             if let Some(path) = out {
                 write_scenes_catalog(&path).map(|()| {

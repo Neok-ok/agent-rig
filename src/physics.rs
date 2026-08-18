@@ -1289,6 +1289,7 @@ impl PhysicsWorld {
                 ],
             });
         }
+        states.sort_by(|a, b| a.id.cmp(&b.id));
         self.controller_states = states;
     }
 
